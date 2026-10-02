@@ -101,8 +101,12 @@ async function main() {
   const leadCat = cats.find((c) => c.name.trim().toLowerCase() === settings.funnels.leads.trim().toLowerCase());
   const saleCat = cats.find((c) => c.name.trim().toLowerCase() === settings.funnels.sales.trim().toLowerCase());
   if (!leadCat || !saleCat) {
-    throw new Error('Не нашёл воронки в Битрикс. Есть такие: ' + cats.map((c) => `«${c.name}» (id ${c.id})`).join(', ') +
-      '. Впиши точные названия в config/settings.json → funnels.');
+    const stagesOf = (id) => Object.entries(stages)
+      .filter(([k]) => (id === 0 ? !k.includes(':') : k.startsWith('C' + id + ':')))
+      .map(([, v]) => v).join(' / ');
+    throw new Error('Не нашёл воронки в Битрикс. Есть такие:\n' +
+      cats.map((c) => `«${c.name}» (id ${c.id}): ${stagesOf(c.id)}`).join('\n') +
+      '\nВпиши точные названия в config/settings.json → funnels.');
   }
 
   const leads = await listDeals(leadCat.id, from);
