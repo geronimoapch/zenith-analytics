@@ -98,8 +98,10 @@ async function main() {
 
   const cats = await getCategories();
   const stages = await getStages();
-  const leadCat = cats.find((c) => c.name.trim().toLowerCase() === settings.funnels.leads.trim().toLowerCase());
-  const saleCat = cats.find((c) => c.name.trim().toLowerCase() === settings.funnels.sales.trim().toLowerCase());
+  // В settings.json воронку можно указать названием или числом (id воронки)
+  const pick = (v) => cats.find((c) => (typeof v === 'number' ? c.id === v : c.name.trim().toLowerCase() === String(v).trim().toLowerCase()));
+  const leadCat = pick(settings.funnels.leads);
+  const saleCat = pick(settings.funnels.sales);
   if (!leadCat || !saleCat) {
     const stagesOf = (id) => Object.entries(stages)
       .filter(([k]) => (id === 0 ? !k.includes(':') : k.startsWith('C' + id + ':')))
