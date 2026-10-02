@@ -18,9 +18,13 @@ function writeRaw(name, obj) {
 
 function need(names) {
   const missing = names.filter((n) => !process.env[n]);
-  if (missing.length) {
-    throw new Error('Не заданы секреты: ' + missing.join(', ') + '. Проверь Settings → Secrets and variables → Actions.');
+  if (!missing.length) return;
+  // Google и Meta можно подключить позже: пока секретов нет, шаг пропускается, остальное работает.
+  if (names.every((n) => /^(GOOGLE_ADS_|META_)/.test(n))) {
+    console.log('ПРОПУСК: не заданы секреты ' + missing.join(', ') + '. Этот источник пока не подключён.');
+    process.exit(0);
   }
+  throw new Error('Не заданы секреты: ' + missing.join(', ') + '. Проверь Settings → Secrets and variables → Actions.');
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
