@@ -11,10 +11,7 @@
     "default": 515
   },
 
-  "funnels": {
-    "leads": "Обработка заявок",
-    "sales": "Первичные продажи"
-  },
+  "funnels":{"leads":0,"sales":14},
 
   "stages": {
     "qualified": "КВАЛИФИКАЦИЯ ПРОЙДЕНА",
