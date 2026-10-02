@@ -38,10 +38,15 @@ async function getCategories() {
     const list = (d.result && d.result.categories) || d.result || [];
     list.forEach((c) => { if (Number(c.id) !== 0) out.push({ id: Number(c.id), name: c.name }); });
     return out;
-  } catch (e) {
-    const d = await call('crm.dealcategory.list', {});
-    (d.result || []).forEach((c) => out.push({ id: Number(c.ID), name: c.NAME }));
-    return out;
+  } catch (e1) {
+    try {
+      const d = await call('crm.dealcategory.list', {});
+      (d.result || []).forEach((c) => out.push({ id: Number(c.ID), name: c.NAME }));
+      return out;
+    } catch (e2) {
+      throw new Error('Не получилось получить список воронок. ' + e1.message + ' | ' + e2.message +
+        '. Проверь, что у вебхука есть право CRM и что в секрете адрес вида https://домен/rest/1/код/');
+    }
   }
 }
 
@@ -79,8 +84,11 @@ async function listDeals(categoryId, from) {
 
 async function main() {
   need(['BITRIX_WEBHOOK_URL']);
-  BASE = process.env.BITRIX_WEBHOOK_URL.trim();
-  if (!BASE.endsWith('/')) BASE += '/';
+  // Берём только https://домен/rest/<id>/<код>/ — даже если в секрет вставили адрес с названием метода на конце
+  const m = process.env.BITRIX_WEBHOOK_URL.trim().match(/^(https?:\/\/[^\/]+\/rest\/\d+\/[^\/]+\/)/);
+  if (!m) throw new Error('Адрес вебхука в BITRIX_WEBHOOK_URL должен выглядеть как https://домен/rest/1/код/');
+  BASE = m[1];
+  console.log('Битрикс: домен ' + BASE.split('/')[2]);
 
   const settings = readJson('config/settings.json', {});
   // Берём историю на полгода раньше: нужно, чтобы находить первый лид у клиента, который купил позже
