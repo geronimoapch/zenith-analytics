@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zenith — цена лида и квала</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#1b1f24; --muted:#6b7480; --line:#e4e7ec;
+    --accent:#2563eb; --good:#15803d; --bad:#b91c1c; --warn:#b45309; --chip:#eef1f5;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f1318; --card:#171c23; --ink:#e8ebef; --muted:#8b95a3; --line:#262d36;
+      --accent:#5b8def; --good:#4ade80; --bad:#f87171; --warn:#fbbf24; --chip:#1f262f;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
+  h1{font-size:20px;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+  .chip{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:6px 12px;border-radius:999px;cursor:pointer;font:inherit}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .bar input[type=date]{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:5px 8px;border-radius:8px;font:inherit}
+  .sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .kpi .l{color:var(--muted);font-size:12px}
+  .kpi .v{font-size:22px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+  .kpi .s{color:var(--muted);font-size:11px;margin-top:2px}
+  .tablewrap{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+  table{border-collapse:collapse;width:100%;min-width:900px}
+  th,td{padding:9px 12px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  th:first-child,td:first-child{text-align:left}
+  th{font-size:12px;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}
+  tr.p td{border-bottom:1px solid var(--line);font-weight:600;cursor:pointer}
+  tr.p:hover td{background:var(--chip)}
+  tr.c td{border-bottom:1px solid var(--line);color:var(--ink);font-weight:400;background:color-mix(in srgb,var(--chip) 55%,transparent)}
+  tr.c td:first-child{padding-left:34px}
+  tr.t td{font-weight:700;border-top:2px solid var(--line)}
+  .arrow{display:inline-block;width:14px;color:var(--muted);transition:transform .15s}
+  tr.open .arrow{transform:rotate(90deg)}
+  .dim{color:var(--muted)}
+  .good{color:var(--good)} .bad{color:var(--bad)}
+  .note{color:var(--muted);font-size:12px;margin:10px 2px}
+  details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-top:16px}
+  summary{cursor:pointer;font-weight:600}
+  details table{min-width:0;margin-top:8px}
+  details td,details th{padding:5px 8px}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  .err{background:var(--card);border:1px solid var(--bad);color:var(--bad);padding:14px;border-radius:12px}
+  @media (max-width:600px){ .kpi .v{font-size:18px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Zenith: цена лида и квала по каналам и кампаниям</h1>
+  <div class="sub" id="updated">Загружаю данные…</div>
+
+  <div class="bar" id="presets"></div>
+  <div class="bar">
+    <span class="dim">Период:</span>
+    <input type="date" id="from"> <span class="dim">—</span> <input type="date" id="to">
+    <span class="sep"></span>
+    <span class="dim">Строки:</span>
+    <button class="chip on" data-group="platform">по каналам</button>
+    <button class="chip" data-group="month">по месяцам</button>
+    <span class="sep"></span>
+    <label class="dim"><input type="checkbox" id="onlyPaid" checked> только каналы с расходом в строках итога</label>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="tablewrap"><table id="tbl"></table></div>
+  <div class="note" id="notes"></div>
+
+  <details id="diag"><summary>Диагностика: что не сошлось и что поправить</summary><div id="diagBody"></div></details>
+</div>
+
+<script>
+const fmt = (n) => Math.round(n).toLocaleString('ru-RU').replace(/ /g, ' ');
+const money = (n) => (n || n === 0) && isFinite(n) ? fmt(n) + ' ₸' : '—';
+const pct = (a, b) => b > 0 ? (a / b * 100).toFixed(1).replace('.', ',') + '%' : '—';
+const div = (a, b) => b > 0 ? a / b : null;
+
+const MONTHS = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+const monthLabel = (ym) => MONTHS[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4);
+
+let DATA = null, group = 'platform', range = {from: '', to: ''};
+const open = new Set();
+
+const iso = (d) => d.toISOString().slice(0, 10);
+const todayIso = () => iso(new Date());
+function addDays(s, n){ const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return iso(d); }
+
+function presets(){
+  const t = todayIso();
+  const ym = t.slice(0, 7);
+  const prev = (() => { const d = new Date(t + 'T00:00:00Z'); d.setUTCDate(1); d.setUTCDate(0); return iso(d); })();
+  const prevStart = prev.slice(0, 7) + '-01';
+  return [
+    ['Этот месяц', ym + '-01', t],
+    ['Прошлый месяц', prevStart, prev],
+    ['7 дней', addDays(t, -6), t],
+    ['30 дней', addDays(t, -29), t],
+    ['Всё время', DATA.firstDate, t],
+  ];
+}
+
+function renderPresets(){
+  const el = document.getElementById('presets');
+  el.innerHTML = '';
+  presets().forEach(([name, f, t], i) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (range.from === f && range.to === t ? ' on' : '');
+    b.textContent = name;
+    b.onclick = () => { range = {from: f, to: t}; sync(); };
+    el.appendChild(b);
+  });
+}
+
+function sync(){
+  document.getElementById('from').value = range.from;
+  document.getElementById('to').value = range.to;
+  renderPresets(); render();
+}
+
+const ZERO = () => ({sp:0, cl:0, im:0, l:0, cn:0, q:0, pay:0, rev:0});
+function add(a, r){ a.sp += r.sp; a.cl += r.cl; a.im += r.im; a.l += r.l; a.cn += r.cn; a.q += r.q; a.pay += r.pay; a.rev += r.rev; return a; }
+
+function aggregate(rows, keyFn){
+  const m = new Map();
+  rows.forEach((r) => { const k = keyFn(r); if (!m.has(k)) m.set(k, ZERO()); add(m.get(k), r); });
+  return m;
+}
+
+function cells(a){
+  const cpl = div(a.sp, a.cn), cpql = div(a.sp, a.q), roas = div(a.rev, a.sp);
+  return `<td>${a.sp ? money(a.sp) : '<span class="dim">—</span>'}</td>
+    <td>${a.cl ? fmt(a.cl) : '<span class="dim">—</span>'}</td>
+    <td>${fmt(a.cn)}</td>
+    <td>${a.sp ? money(cpl) : '<span class="dim">—</span>'}</td>
+    <td><b>${fmt(a.q)}</b></td>
+    <td>${a.sp ? '<b>' + money(cpql) + '</b>' : '<span class="dim">—</span>'}</td>
+    <td>${pct(a.q, a.cn)}</td>
+    <td>${fmt(a.pay)}</td>
+    <td>${a.rev ? money(a.rev) : '<span class="dim">—</span>'}</td>
+    <td>${a.sp && a.rev ? roas.toFixed(2).replace('.', ',') + '×' : '<span class="dim">—</span>'}</td>`;
+}
+
+const HEAD = ['', 'Расход', 'Клики', 'Лиды (чистые)', 'Цена лида', 'Квалы', 'Цена квала', '% квалов', 'Оплаты', 'Выручка', 'ROAS'];
+
+function render(){
+  const rows = DATA.rows.filter((r) => r.d >= range.from && r.d <= range.to);
+  const total = rows.reduce((a, r) => add(a, r), ZERO());
+  const paidTotal = rows.filter((r) => r.sp > 0 || true).reduce((a, r) => add(a, r), ZERO());
+
+  // KPI
+  const k = [
+    ['Расход', money(total.sp), 'все каналы'],
+    ['Лиды (без спама и дублей)', fmt(total.cn), `всего с мусором: ${fmt(total.l)}`],
+    ['Квал-лиды', fmt(total.q), pct(total.q, total.cn) + ' от чистых'],
+    ['Цена лида', money(div(total.sp, total.cn)), 'расход ÷ чистые лиды'],
+    ['Цена квала', money(div(total.sp, total.q)), 'расход ÷ квалы'],
+    ['Оплаты', fmt(total.pay), money(total.rev)],
+    ['ROAS', total.sp && total.rev ? (total.rev / total.sp).toFixed(2).replace('.', ',') + '×' : '—', 'выручка ÷ расход'],
+  ];
+  document.getElementById('kpis').innerHTML = k.map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+
+  // таблица
+  const top = group === 'platform' ? (r) => r.p : (r) => r.d.slice(0, 7);
+  const sub = group === 'platform' ? (r) => r.c : (r) => r.p;
+  const topMap = aggregate(rows, top);
+  const order = [...topMap.entries()].sort((a, b) => group === 'month' ? (a[0] < b[0] ? 1 : -1) : (b[1].sp - a[1].sp) || (b[1].cn - a[1].cn));
+
+  let html = '<thead><tr>' + HEAD.map((h) => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+  order.forEach(([key, a]) => {
+    const id = group + '|' + key;
+    const isOpen = open.has(id);
+    const label = group === 'month' ? monthLabel(key) : key;
+    html += `<tr class="p ${isOpen ? 'open' : ''}" data-id="${id}"><td><span class="arrow">▸</span>${label}</td>${cells(a)}</tr>`;
+    if (isOpen) {
+      const subRows = rows.filter((r) => top(r) === key);
+      const subMap = aggregate(subRows, sub);
+      [...subMap.entries()].sort((x, y) => (y[1].sp - x[1].sp) || (y[1].cn - x[1].cn)).forEach(([sk, sa]) => {
+        html += `<tr class="c"><td>${sk}</td>${cells(sa)}</tr>`;
+      });
+    }
+  });
+  html += `<tr class="t"><td>Итого</td>${cells(total)}</tr></tbody>`;
+  document.getElementById('tbl').innerHTML = html;
+  document.querySelectorAll('tr.p').forEach((tr) => tr.onclick = () => {
+    const id = tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); render();
+  });
+
+  document.getElementById('notes').innerHTML =
+    'Лид — сделка в «Обработке заявок» без этапов СПАМ и ДУБЛЬ. Квал — этап «КВАЛИФИКАЦИЯ ПРОЙДЕНА». Лиды и квалы стоят на дате создания лида, оплаты и выручка — на дате оплаты. ' +
+    'Строка «Без метки» — звонки и часть WhatsApp, у них нет UTM, расход на них не делится. Цена квала в итоге считается на ВСЕ квалы, включая без метки, поэтому по каналам она честнее.';
+  renderDiag();
+}
+
+function renderDiag(){
+  const d = DATA.diagnostics, el = document.getElementById('diagBody');
+  const li = (arr, f) => arr.length ? '<table>' + arr.map(f).join('') + '</table>' : '<div class="dim">всё распознано</div>';
+  const share = Object.entries(d.utmShareByMonth || {}).sort().map(([m, v]) => `<tr><td>${monthLabel(m)}</td><td>${v.leads}</td><td>${v.withUtm}</td><td>${pct(v.withUtm, v.leads)}</td></tr>`).join('');
+  const stages = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+  const p = d.payments || {};
+  el.innerHTML = `<div class="grid2">
+    <div><b>Доля лидов с UTM по месяцам</b><table><tr><th>Месяц</th><th>Лидов</th><th>С меткой</th><th>%</th></tr>${share}</table></div>
+    <div><b>Откуда взялись оплаты</b><table>
+      <tr><td>Всего оплат в периоде данных</td><td>${p.total ?? 0}</td></tr>
+      <tr><td>Найдены по контакту в «Обработке заявок»</td><td>${p.viaContact ?? 0}</td></tr>
+      <tr><td>По своей метке в сделке продаж</td><td>${p.viaOwnUtm ?? 0}</td></tr>
+      <tr><td>Не определены (нет метки)</td><td>${p.unknown ?? 0}</td></tr></table></div>
+    <div><b>Метки utm_campaign, которых нет в кабинете</b>${li(d.unmatchedUtm || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}
+      <div class="dim" style="margin-top:6px">Если здесь много строк — добавь правило в config/campaign-map.json или поставь в рекламе id кампании в UTM.</div></div>
+    <div><b>Кампании кабинета без своего «семейства»</b>${li(d.unmatchedCabinet || [], (x) => `<tr><td>${x.k}</td></tr>`)}</div>
+    <div><b>Этапы воронки «Обработка заявок»</b><table>${stages(d.stagesLeads)}</table></div>
+    <div><b>Этапы воронки «Первичные продажи»</b><table>${stages(d.stagesSales)}</table></div>
+    <div><b>Значения utm_source и как они прочитаны</b><table>${Object.entries(d.utmSources || {}).sort((a, b) => b[1].n - a[1].n).slice(0, 25).map(([k, v]) => `<tr><td>${k}</td><td>${v.n}</td><td>${v.platform}</td></tr>`).join('')}</table></div>
+    <div><b>Когда забирались данные</b><table>${Object.entries(d.fetchedAt || {}).map(([k, v]) => `<tr><td>${k}</td><td>${v ? new Date(v).toLocaleString('ru-RU') : 'нет'}</td></tr>`).join('')}</table></div>
+  </div>`;
+}
+
+async function init(){
+  try {
+    const r = await fetch('data/data.json?_=' + Date.now());
+    if (!r.ok) throw new Error('data/data.json не найден (HTTP ' + r.status + '). Запусти Actions → Update data вручную.');
+    DATA = await r.json();
+  } catch (e) {
+    document.querySelector('.wrap').insertAdjacentHTML('beforeend', `<div class="err">${e.message}</div>`);
+    document.getElementById('updated').textContent = 'Нет данных';
+    return;
+  }
+  document.getElementById('updated').textContent = 'Обновлено: ' + new Date(DATA.generatedAt).toLocaleString('ru-RU') + ' · данные с ' + DATA.firstDate;
+  const t = todayIso();
+  range = {from: t.slice(0, 7) + '-01', to: t};
+  document.getElementById('from').onchange = (e) => { range.from = e.target.value; sync(); };
+  document.getElementById('to').onchange = (e) => { range.to = e.target.value; sync(); };
+  document.querySelectorAll('[data-group]').forEach((b) => b.onclick = () => {
+    group = b.dataset.group;
+    document.querySelectorAll('[data-group]').forEach((x) => x.classList.toggle('on', x === b));
+    render();
+  });
+  document.getElementById('onlyPaid').closest('label').remove();
+  sync();
+}
+init();
+</script>
+</body>
+</html>
