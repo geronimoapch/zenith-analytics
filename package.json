@@ -8,8 +8,9 @@
   "scripts": {
     "fetch:google": "node scripts/fetch-google-ads.js",
     "fetch:meta": "node scripts/fetch-meta-ads.js",
+    "fetch:yandex": "node scripts/fetch-yandex-direct.js",
     "fetch:bitrix": "node scripts/fetch-bitrix.js",
     "build": "node scripts/build-data.js",
-    "update": "npm run fetch:google && npm run fetch:meta && npm run fetch:bitrix && npm run build"
+    "update": "npm run fetch:google && npm run fetch:meta && npm run fetch:yandex && npm run fetch:bitrix && npm run build"
   }
 }
