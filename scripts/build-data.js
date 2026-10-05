@@ -18,6 +18,7 @@ const rawFile = (n, fb) => {
 
 const google = rawFile('google-ads.json', { rows: [] });
 const meta = rawFile('meta-ads.json', { rows: [] });
+const yandex = rawFile('yandex-direct.json', { rows: [] });
 const bxLeads = rawFile('bitrix-leads.json', { rows: [] });
 const bxSales = rawFile('bitrix-sales.json', { rows: [] });
 
@@ -127,10 +128,22 @@ meta.rows.forEach((r) => {
   b.cl += r.clicks; b.im += r.impressions; b.cv += r.leads;
 });
 
+// ---------- расход Яндекс.Директа (из API, в тенге; без НДС) ----------
+// Если за месяц есть данные из API, ручной ввод за этот месяц не используется.
+const yandexMonths = new Set();
+yandex.rows.forEach((r) => {
+  if (r.date < FIRST || excluded(r.campaignName)) return;
+  const b = bucket(r.date, 'Яндекс', NO_CAMPAIGN);
+  b.spn += r.cost; b.sp += r.cost * factor('Яндекс');
+  b.cl += r.clicks; b.im += r.impressions;
+  yandexMonths.add(month(r.date));
+});
+
 // ---------- ручной расход (Satu, Яндекс и др.) ----------
 const today = new Date().toISOString().slice(0, 10);
 Object.entries(settings.manualSpendKzt || {}).forEach(([platform, byMonth]) => {
   Object.entries(byMonth).forEach(([ym, total]) => {
+    if (platform === 'Яндекс' && yandexMonths.has(ym)) return;
     const [y, m] = ym.split('-').map(Number);
     const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
     // для текущего месяца раскладываем только до сегодняшнего дня, чтобы не было «будущих» трат
@@ -246,7 +259,7 @@ const output = {
     utmSources,
     unmatchedUtm: top(unmatchedUtm, 30),
     unmatchedCabinet: top(unmatchedCabinet, 30),
-    fetchedAt: { google: google.fetchedAt || null, meta: meta.fetchedAt || null, bitrix: bxLeads.fetchedAt || null },
+    fetchedAt: { google: google.fetchedAt || null, meta: meta.fetchedAt || null, yandex: yandex.fetchedAt || null, bitrix: bxLeads.fetchedAt || null },
   },
 };
 
