@@ -4,11 +4,7 @@
   "cabinetCurrency": { "google": "USD", "meta": "USD" },
 
   "usdToKzt": {
-    "2026-06": 502.1,
-    "2026-07": 525,
-    "2026-08": 549.6,
-    "2026-09": 514.2,
-    "default": 523
+    "default": 450
   },
 
   "commission": {
