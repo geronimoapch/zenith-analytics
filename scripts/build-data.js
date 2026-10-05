@@ -88,7 +88,7 @@ function bucket(d, p, c) {
   const k = d + '|' + p + '|' + c;
   let r = rows.get(k);
   if (!r) {
-    r = { d, p, c, sp: 0, usd: 0, cl: 0, im: 0, cv: 0, l: 0, cn: 0, q: 0, pay: 0, rev: 0 };
+    r = { d, p, c, sp: 0, spn: 0, usd: 0, cl: 0, im: 0, cv: 0, l: 0, cn: 0, q: 0, pay: 0, rev: 0 };
     rows.set(k, r);
   }
   return r;
@@ -97,6 +97,12 @@ function bucket(d, p, c) {
 // ---------- курс ----------
 const rates = settings.usdToKzt || {};
 const rateFor = (d) => Number(rates[month(d)] || rates.default || 500);
+
+// ---------- комиссии и НДС при пополнении ----------
+// В кабинете расход показан без комиссии и НДС. Реально мы платим больше:
+// множитель = (1 + комиссия) * (1 + НДС). sp = с комиссиями, spn = как в кабинете.
+const comm = settings.commission || {};
+const factor = (p) => { const c = comm[p]; return c ? (1 + (c.fee || 0)) * (1 + (c.vat || 0)) : 1; };
 
 // ---------- расход: Google и Meta ----------
 // Сначала пробегаем по всем кабинетным строкам, чтобы заполнить индекс id/имя → семейство
@@ -109,13 +115,15 @@ const excluded = (name) => exclude.some((k) => String(name || '').toLowerCase().
 google.rows.forEach((r) => {
   if (r.date < FIRST || excluded(r.campaignName)) return;
   const b = bucket(r.date, 'Google', cabinetFamily('Google', r.campaignId, r.campaignName));
-  b.usd += r.costUsd; b.sp += r.costUsd * rateFor(r.date);
+  const net = r.costUsd * rateFor(r.date);
+  b.usd += r.costUsd; b.spn += net; b.sp += net * factor('Google');
   b.cl += r.clicks; b.im += r.impressions; b.cv += r.conversions;
 });
 meta.rows.forEach((r) => {
   if (r.date < FIRST || excluded(r.campaignName)) return;
   const b = bucket(r.date, 'Meta', cabinetFamily('Meta', r.campaignId, r.campaignName));
-  b.usd += r.spendUsd; b.sp += r.spendUsd * rateFor(r.date);
+  const net = r.spendUsd * rateFor(r.date);
+  b.usd += r.spendUsd; b.spn += net; b.sp += net * factor('Meta');
   b.cl += r.clicks; b.im += r.impressions; b.cv += r.leads;
 });
 
@@ -130,7 +138,8 @@ Object.entries(settings.manualSpendKzt || {}).forEach(([platform, byMonth]) => {
     for (let i = 1; i <= daysInMonth; i++) {
       const d = `${ym}-${String(i).padStart(2, '0')}`;
       if (d < FIRST || d > today) continue;
-      bucket(d, platform, NO_CAMPAIGN).sp += perDay;
+      const mb = bucket(d, platform, NO_CAMPAIGN);
+      mb.spn += perDay; mb.sp += perDay * factor(platform);
     }
   });
 });
@@ -217,7 +226,7 @@ bxSales.rows.forEach((s) => {
 // ---------- итог ----------
 const round = (n) => Math.round(n * 100) / 100;
 const outRows = [...rows.values()]
-  .map((r) => ({ ...r, sp: round(r.sp), usd: round(r.usd), cv: round(r.cv), rev: round(r.rev) }))
+  .map((r) => ({ ...r, sp: round(r.sp), spn: round(r.spn), usd: round(r.usd), cv: round(r.cv), rev: round(r.rev) }))
   .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : a.p < b.p ? -1 : 1));
 
 const top = (obj, n) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ k, n: v }));
@@ -226,6 +235,7 @@ const output = {
   generatedAt: new Date().toISOString(),
   firstDate: FIRST,
   rates,
+  commission: comm,
   rows: outRows,
   diagnostics: {
     leads: { total: leadsCounted, withUtm: leadsWithUtm, clean: cleanTotal, qualified: qualTotal },
