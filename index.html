@@ -51,6 +51,11 @@
   details td,details th{padding:5px 8px}
   .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
   .err{background:var(--card);border:1px solid var(--bad);color:var(--bad);padding:14px;border-radius:12px}
+  .qb{border:0;background:var(--chip);color:var(--accent);cursor:pointer;border-radius:6px;padding:0 6px;margin-left:6px;font:inherit;font-size:12px;line-height:18px}
+  tr.ql td{text-align:left;white-space:normal;background:var(--chip);border-bottom:1px solid var(--line);padding:8px 12px 8px 34px;font-weight:400}
+  .ql a{display:inline-block;margin:2px 14px 2px 0;color:var(--accent);text-decoration:none;white-space:nowrap}
+  .ql a:hover{text-decoration:underline}
+  .ql .dd{color:var(--muted);font-size:11px}
   @media (max-width:600px){ .kpi .v{font-size:18px} }
 </style>
 </head>
@@ -89,9 +94,11 @@ const monthLabel = (ym) => MONTHS[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0
 
 let DATA = null, group = 'platform', range = {from: '', to: ''};
 const open = new Set();
+const qopen = new Set();
 
 const iso = (d) => d.toISOString().slice(0, 10);
-const todayIso = () => iso(new Date());
+// сегодняшняя дата по Алматы (UTC+5), чтобы ночью «сегодня» и «вчера» не уезжали
+const todayIso = () => iso(new Date(Date.now() + 5 * 3600e3));
 function addDays(s, n){ const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return iso(d); }
 
 function presets(){
@@ -99,7 +106,10 @@ function presets(){
   const ym = t.slice(0, 7);
   const prev = (() => { const d = new Date(t + 'T00:00:00Z'); d.setUTCDate(1); d.setUTCDate(0); return iso(d); })();
   const prevStart = prev.slice(0, 7) + '-01';
+  const y = addDays(t, -1);
   return [
+    ['Сегодня', t, t],
+    ['Вчера', y, y],
     ['Этот месяц', ym + '-01', t],
     ['Прошлый месяц', prevStart, prev],
     ['7 дней', addDays(t, -6), t],
@@ -135,13 +145,13 @@ function aggregate(rows, keyFn){
   return m;
 }
 
-function cells(a){
+function cells(a, qk){
   const cpl = div(a.sp, a.cn), cpql = div(a.sp, a.q), roas = div(a.rev, a.sp);
   return `<td>${a.sp ? money(a.sp) : '<span class="dim">—</span>'}</td>
     <td>${a.cl ? fmt(a.cl) : '<span class="dim">—</span>'}</td>
     <td>${fmt(a.cn)}</td>
     <td>${a.sp ? money(cpl) : '<span class="dim">—</span>'}</td>
-    <td><b>${fmt(a.q)}</b></td>
+    <td><b>${fmt(a.q)}</b>${a.q && qk ? '<button class="qb" data-q="' + qk + '" title="Показать квал-лиды со ссылками на Битрикс">' + (qopen.has(qk) ? '▴' : '▾') + '</button>' : ''}</td>
     <td>${a.sp ? '<b>' + money(cpql) + '</b>' : '<span class="dim">—</span>'}</td>
     <td>${pct(a.q, a.cn)}</td>
     <td>${fmt(a.pay)}</td>
@@ -151,8 +161,20 @@ function cells(a){
 
 const HEAD = ['', 'Расход', 'Клики', 'Лиды (чистые)', 'Цена лида', 'Квалы', 'Цена квала', '% квалов', 'Оплаты', 'Выручка', 'ROAS'];
 
-function render(){
-  const rows = DATA.rows.filter((r) => r.d >= range.from && r.d <= range.to);
+const qkey = (a, b) => encodeURIComponent(JSON.stringify([group, a, b]));
+const DM = (d) => d.slice(8) + '.' + d.slice(5, 7);
+function qlist(key, sk, topFn, subFn){
+  const list = (DATA.quals || []).filter((q) => q.d >= range.from && q.d <= range.to &&
+    (key === null || topFn(q) === key) && (sk === null || subFn(q) === sk));
+  const showP = key === null || (group === 'month' && sk === null);
+  const body = list.length ? list.map((q) => {
+    const extra = showP ? ' · ' + q.p : (sk === null && q.c && q.c !== '(всё вместе)' ? ' · ' + q.c : '');
+    return '<a href="https://' + DATA.portal + '/crm/deal/details/' + q.id + '/" target="_blank" rel="noopener" title="' + q.p + ' · ' + q.c + '">№' + q.id + ' <span class="dd">' + DM(q.d) + extra + '</span></a>';
+  }).join('') : '<span class="dim">Список появится после ближайшего обновления данных</span>';
+  return '<tr class="ql"><td colspan="11">' + body + '</td></tr>';
+}
+
+function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.d <= range.to);
   const total = rows.reduce((a, r) => add(a, r), ZERO());
   const paidTotal = rows.filter((r) => r.sp > 0 || true).reduce((a, r) => add(a, r), ZERO());
 
@@ -179,17 +201,24 @@ function render(){
     const id = group + '|' + key;
     const isOpen = open.has(id);
     const label = group === 'month' ? monthLabel(key) : key;
-    html += `<tr class="p ${isOpen ? 'open' : ''}" data-id="${id}"><td><span class="arrow">▸</span>${label}</td>${cells(a)}</tr>`;
+    html += `<tr class="p ${isOpen ? 'open' : ''}" data-id="${id}"><td><span class="arrow">▸</span>${label}</td>${cells(a, qkey(key, null))}</tr>`;
+    if (qopen.has(qkey(key, null))) html += qlist(key, null, top, sub);
     if (isOpen) {
       const subRows = rows.filter((r) => top(r) === key);
       const subMap = aggregate(subRows, sub);
       [...subMap.entries()].sort((x, y) => (y[1].sp - x[1].sp) || (y[1].cn - x[1].cn)).forEach(([sk, sa]) => {
-        html += `<tr class="c"><td>${sk}</td>${cells(sa)}</tr>`;
+        html += `<tr class="c"><td>${sk}</td>${cells(sa, qkey(key, sk))}</tr>`;
+        if (qopen.has(qkey(key, sk))) html += qlist(key, sk, top, sub);
       });
     }
   });
-  html += `<tr class="t"><td>Итого</td>${cells(total)}</tr></tbody>`;
+  html += `<tr class="t"><td>Итого</td>${cells(total, qkey(null, null))}</tr>`;
+  if (qopen.has(qkey(null, null))) html += qlist(null, null, top, sub);
+  html += '</tbody>';
   document.getElementById('tbl').innerHTML = html;
+  document.querySelectorAll('.qb').forEach((b) => b.onclick = (e) => {
+    e.stopPropagation(); const k = b.dataset.q; qopen.has(k) ? qopen.delete(k) : qopen.add(k); render();
+  });
   document.querySelectorAll('tr.p').forEach((tr) => tr.onclick = () => {
     const id = tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); render();
   });
