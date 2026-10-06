@@ -166,6 +166,7 @@ const leads = bxLeads.rows.map((x) => ({
 const stagesLeads = {};
 const utmSources = {};
 const utmShare = {};
+const qualList = [];
 let leadsCounted = 0, leadsWithUtm = 0, cleanTotal = 0, qualTotal = 0;
 
 leads.forEach((x) => {
@@ -180,7 +181,7 @@ leads.forEach((x) => {
   const b = bucket(x.day, platform, platform === 'Без метки' ? NO_CAMPAIGN : camp);
   b.l += 1;
   if (clean) b.cn += 1;
-  if (qual) b.q += 1;
+  if (qual) { b.q += 1; qualList.push({ id: x.id, d: x.day, p: platform, c: platform === 'Без метки' ? NO_CAMPAIGN : camp }); }
 
   leadsCounted++; if (x.platform) leadsWithUtm++;
   if (clean) cleanTotal++; if (qual) qualTotal++;
@@ -249,7 +250,9 @@ const output = {
   firstDate: FIRST,
   rates,
   commission: comm,
+  portal: settings.bitrixPortal || 'macron.bitrix24.kz',
   rows: outRows,
+  quals: qualList.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : Number(b.id) - Number(a.id))),
   diagnostics: {
     leads: { total: leadsCounted, withUtm: leadsWithUtm, clean: cleanTotal, qualified: qualTotal },
     utmShareByMonth: utmShare,
