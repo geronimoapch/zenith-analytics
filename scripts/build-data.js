@@ -71,6 +71,8 @@ function cabinetFamily(platform, id, name) {
   if (!matchFamily(key, name)) unmatchedCabinet[platform + ' | ' + name] = (unmatchedCabinet[platform + ' | ' + name] || 0) + 1;
   cabinetIndex[platform].id[String(id)] = fam;
   cabinetIndex[platform].name[String(name || '').toLowerCase()] = fam;
+  const st = siteOfText(name);
+  siteIdx[platform][String(id)] = st; siteIdx[platform][String(name || '').toLowerCase()] = st;
   return fam;
 }
 
@@ -90,13 +92,31 @@ function utmFamily(platform, utmCampaign) {
   return /^\d+$/.test(raw) ? '(метка-id, не найден в кабинете)' : '(метка не распознана)';
 }
 
-// ---------- копилка строк ----------
-const rows = new Map();
-function bucket(d, p, c) {
-  const k = d + '|' + p + '|' + c;
+// ---------- сайт: site (zenith-i) / lp / invest ----------
+// По названию кампании или по UTM. Порядок важен: сначала invest, потом лендинг, потом сайт.
+const siteOfText = (txt) => {
+  const s = String(txt || '').toLowerCase();
+  if (/инвест|invest/.test(s)) return 'invest';
+  if (/лендинг|ленд|land|(^|[^a-z])lp([^a-z]|$)/.test(s)) return 'lp';
+  if (/сайт|site|zenith-i/.test(s)) return 'site';
+  return '';
+};
+const siteIdx = { Google: {}, Meta: {} };
+function leadSite(x, platform) {
+  const u = x.utm || {};
+  const direct = siteOfText([u.source, u.medium, u.campaign, u.content].join(' '));
+  if (direct) return direct;
+  const idx = siteIdx[platform];
+  const c = String(u.campaign || '').trim();
+  return idx ? (idx[c] || idx[c.toLowerCase()] || '') : '';
+}
+
+// ---------- копилка строк ----------const rows = new Map();
+function bucket(d, p, c, s = '') {
+  const k = d + '|' + p + '|' + c + '|' + s;
   let r = rows.get(k);
   if (!r) {
-    r = { d, p, c, sp: 0, spn: 0, usd: 0, cl: 0, im: 0, cv: 0, l: 0, cn: 0, q: 0, pay: 0, rev: 0 };
+    r = { d, p, c, s, sp: 0, spn: 0, usd: 0, cl: 0, im: 0, cv: 0, l: 0, cn: 0, q: 0, pay: 0, rev: 0 };
     rows.set(k, r);
   }
   return r;
@@ -122,7 +142,7 @@ const excluded = (name) => exclude.some((k) => String(name || '').toLowerCase().
 
 google.rows.forEach((r) => {
   if (r.date < FIRST || excluded(r.campaignName)) return;
-  const b = bucket(r.date, 'Google', cabinetFamily('Google', r.campaignId, r.campaignName));
+  const b = bucket(r.date, 'Google', cabinetFamily('Google', r.campaignId, r.campaignName), siteOfText(r.campaignName));
   const net = r.costUsd * rateFor(r.date);
   b.usd += r.costUsd; b.spn += net; b.sp += net * factor('Google');
   b.cl += r.clicks; b.im += r.impressions; b.cv += r.conversions;
@@ -131,13 +151,13 @@ let googleStale = false;
 if (googleMissing && prevData) {
   googleStale = true;
   prevData.rows.filter((r) => r.p === 'Google' && (r.sp || r.usd)).forEach((r) => {
-    const b = bucket(r.d, 'Google', r.c);
+    const b = bucket(r.d, 'Google', r.c, r.s !== undefined ? r.s : siteOfText(r.c));
     b.sp += r.sp; b.spn += r.spn || 0; b.usd += r.usd || 0; b.cl += r.cl; b.im += r.im; b.cv += r.cv;
   });
 }
 meta.rows.forEach((r) => {
   if (r.date < FIRST || excluded(r.campaignName)) return;
-  const b = bucket(r.date, 'Meta', cabinetFamily('Meta', r.campaignId, r.campaignName));
+  const b = bucket(r.date, 'Meta', cabinetFamily('Meta', r.campaignId, r.campaignName), siteOfText(r.campaignName));
   const net = r.spendUsd * rateFor(r.date);
   b.usd += r.spendUsd; b.spn += net; b.sp += net * factor('Meta');
   b.cl += r.clicks; b.im += r.impressions; b.cv += r.leads;
@@ -193,10 +213,11 @@ leads.forEach((x) => {
   const platform = x.platform || 'Без метки';
   const camp = x.platform ? utmFamily(x.platform, x.utm.campaign) : NO_CAMPAIGN;
   x.family = camp;
-  const b = bucket(x.day, platform, platform === 'Без метки' ? NO_CAMPAIGN : camp);
+  x.site = leadSite(x, x.platform);
+  const b = bucket(x.day, platform, platform === 'Без метки' ? NO_CAMPAIGN : camp, x.site);
   b.l += 1;
   if (clean) b.cn += 1;
-  if (qual) { b.q += 1; qualList.push({ id: x.id, d: x.day, p: platform, c: platform === 'Без метки' ? NO_CAMPAIGN : camp }); }
+  if (qual) { b.q += 1; qualList.push({ id: x.id, d: x.day, s: x.site, p: platform, c: platform === 'Без метки' ? NO_CAMPAIGN : camp }); }
 
   leadsCounted++; if (x.platform) leadsWithUtm++;
   if (clean) cleanTotal++; if (qual) qualTotal++;
@@ -233,22 +254,22 @@ bxSales.rows.forEach((s) => {
   if (!payDay || payDay < FIRST) return;
   pay.total++;
 
-  let platform = null, camp = NO_CAMPAIGN;
+  let platform = null, camp = NO_CAMPAIGN, site = '';
   const cands = s.contact ? byContact.get(s.contact) : null;
   if (!s.contact) pay.noContact++;
   if (cands && cands.length) {
     const limit = plusOneDay(s.created);
     const first = cands.find((x) => x.day <= limit) || null;
-    if (first) { platform = first.platform; camp = first.family || utmFamily(first.platform, first.utm.campaign); pay.viaContact++; }
+    if (first) { platform = first.platform; camp = first.family || utmFamily(first.platform, first.utm.campaign); site = first.site || ''; pay.viaContact++; }
   }
   if (!platform) {
     const own = platformOf(s.utm.source);
-    if (own) { platform = own; camp = utmFamily(own, s.utm.campaign); pay.viaOwnUtm++; }
+    if (own) { platform = own; camp = utmFamily(own, s.utm.campaign); site = leadSite(s, own); pay.viaOwnUtm++; }
   }
   if (!platform) { platform = 'Без метки'; camp = NO_CAMPAIGN; pay.unknown++; }
   if (platform !== 'Без метки' && !HAS_API.has(platform)) camp = NO_CAMPAIGN;
 
-  const b = bucket(payDay, platform, camp);
+  const b = bucket(payDay, platform, camp, site);
   b.pay += 1; b.rev += s.amount;
 });
 
