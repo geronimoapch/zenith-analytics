@@ -73,6 +73,7 @@ function cabinetFamily(platform, id, name) {
   cabinetIndex[platform].name[String(name || '').toLowerCase()] = fam;
   const st = siteOfText(name);
   siteIdx[platform][String(id)] = st; siteIdx[platform][String(name || '').toLowerCase()] = st;
+  if (st) { const fk = platform + '|' + fam; (famSites[fk] = famSites[fk] || new Set()).add(st); }
   return fam;
 }
 
@@ -102,13 +103,19 @@ const siteOfText = (txt) => {
   return '';
 };
 const siteIdx = { Google: {}, Meta: {} };
+// какие сайты встречаются у кампаний кабинета внутри одного «семейства» (платформа|семейство -> Set)
+const famSites = {};
 function leadSite(x, platform) {
   const u = x.utm || {};
   const direct = siteOfText([u.source, u.medium, u.campaign, u.content].join(' '));
   if (direct) return direct;
   const idx = siteIdx[platform];
   const c = String(u.campaign || '').trim();
-  return idx ? (idx[c] || idx[c.toLowerCase()] || '') : '';
+  const byCab = idx ? (idx[c] || idx[c.toLowerCase()] || '') : '';
+  if (byCab) return byCab;
+  // метка распознана как семейство кампаний, и у всех кампаний этого семейства в кабинете один и тот же сайт
+  const fs = famSites[platform + '|' + x.family];
+  return fs && fs.size === 1 ? [...fs][0] : '';
 }
 
 // ---------- копилка строк ----------
