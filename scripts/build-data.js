@@ -17,6 +17,9 @@ const rawFile = (n, fb) => {
 };
 
 const google = rawFile('google-ads.json', { rows: [] });
+// Если Google не выгрузился (например, истёк токен), расход Google берём из прошлого data.json
+const googleMissing = !fs.existsSync(path.join(rawDir, 'google-ads.json'));
+const prevData = (() => { try { return JSON.parse(fs.readFileSync(path.join(root, 'data', 'data.json'), 'utf8')); } catch (e) { return null; } })();
 const meta = rawFile('meta-ads.json', { rows: [] });
 const yandex = rawFile('yandex-direct.json', { rows: [] });
 const bxLeads = rawFile('bitrix-leads.json', { rows: [] });
@@ -39,6 +42,10 @@ function platformOf(utmSource) {
   if (['meta', 'ig', 'fb', 'facebook', 'instagram', 'landing_meta'].includes(s)) return 'Meta';
   if (['google', 'google.com', 'landing_google'].includes(s)) return 'Google';
   if (['yandex', 'ya', 'yandex.kz', 'yandex.ru'].includes(s)) return 'Яндекс';
+  // метки вида google_invest, meta-invest, yandex_invest и т.п.
+  if (/(^|[^a-z])(google|gads|adwords)/.test(s)) return 'Google';
+  if (/(^|[^a-z])(meta|facebook|instagram|fb|ig)([^a-z]|$)/.test(s)) return 'Meta';
+  if (/yandex|(^|[^a-z])ya([^a-z]|$)/.test(s)) return 'Яндекс';
   if (s.includes('satu')) return 'Satu';
   if (s.includes('zenith-i')) return 'Сайт (прямой)';
   return 'Другое';
@@ -120,6 +127,14 @@ google.rows.forEach((r) => {
   b.usd += r.costUsd; b.spn += net; b.sp += net * factor('Google');
   b.cl += r.clicks; b.im += r.impressions; b.cv += r.conversions;
 });
+let googleStale = false;
+if (googleMissing && prevData) {
+  googleStale = true;
+  prevData.rows.filter((r) => r.p === 'Google' && (r.sp || r.usd)).forEach((r) => {
+    const b = bucket(r.d, 'Google', r.c);
+    b.sp += r.sp; b.spn += r.spn || 0; b.usd += r.usd || 0; b.cl += r.cl; b.im += r.im; b.cv += r.cv;
+  });
+}
 meta.rows.forEach((r) => {
   if (r.date < FIRST || excluded(r.campaignName)) return;
   const b = bucket(r.date, 'Meta', cabinetFamily('Meta', r.campaignId, r.campaignName));
@@ -254,6 +269,7 @@ const output = {
   rows: outRows,
   quals: qualList.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : Number(b.id) - Number(a.id))),
   diagnostics: {
+    googleStale,
     leads: { total: leadsCounted, withUtm: leadsWithUtm, clean: cleanTotal, qualified: qualTotal },
     utmShareByMonth: utmShare,
     payments: pay,
