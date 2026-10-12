@@ -75,8 +75,9 @@
     <span class="sep"></span>
     <span class="dim">Сайт:</span>
     <button class="chip on" data-site="all">все</button>
-    <button class="chip" data-site="zenith">Zenith</button>
-    <button class="chip" data-site="invest">Инвест</button>
+    <button class="chip" data-site="site">zenith-i</button>
+    <button class="chip" data-site="lp">LP</button>
+    <button class="chip" data-site="invest">zenith-invest</button>
     <span class="sep"></span>
     <label class="dim"><input type="checkbox" id="onlyPaid" checked> только каналы с расходом в строках итога</label>
   </div>
@@ -171,7 +172,7 @@ const DM = (d) => d.slice(8) + '.' + d.slice(5, 7);
 function qlist(key, sk, topFn, subFn){
   const list = (DATA.quals || []).filter((q) => q.d >= range.from && q.d <= range.to &&
     (key === null || topFn(q) === key) && (sk === null || subFn(q) === sk) &&
-    (site === 'all' || (site === 'invest') === /^Инвест/.test(q.c)));
+    (site === 'all' || q.s === site));
   const showP = key === null || (group === 'month' && sk === null);
   const body = list.length ? list.map((q) => {
     const extra = showP ? ' · ' + q.p : (sk === null && q.c && q.c !== '(всё вместе)' ? ' · ' + q.c : '');
@@ -181,7 +182,7 @@ function qlist(key, sk, topFn, subFn){
 }
 
 function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.d <= range.to)
-    .filter((r) => site === 'all' || (site === 'invest') === /^Инвест/.test(r.c));
+    .filter((r) => site === 'all' || r.s === site);
   const total = rows.reduce((a, r) => add(a, r), ZERO());
   const paidTotal = rows.filter((r) => r.sp > 0 || true).reduce((a, r) => add(a, r), ZERO());
 
@@ -233,7 +234,7 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
   document.getElementById('notes').innerHTML =
     'Лид — сделка в «Обработке заявок» без этапов СПАМ и ДУБЛЬ. Квал — этап «КВАЛИФИКАЦИЯ ПРОЙДЕНА». Лиды и квалы стоят на дате создания лида, оплаты и выручка — на дате оплаты. ' +
     'Строка «Без метки» — звонки и часть WhatsApp, у них нет UTM, расход на них не делится. Цена квала в итоге считается на ВСЕ квалы, включая без метки, поэтому по каналам она честнее.';
-  if (site === 'invest') document.getElementById('notes').innerHTML += '<br>Фильтр «Инвест»: считаются только кампании с «Инвест» в названии (Google, Meta). Расход и лиды без кампании (Яндекс, Satu, звонки) сюда не входят.';
+  if (site !== 'all') document.getElementById('notes').innerHTML += '<br>Фильтр по сайту: в zenith-i попадают кампании со словом «сайт» и метки с «site», в LP — «лендинг», land, lp, в zenith-invest — «инвест» и invest. Расход и лиды без такого признака (Яндекс, Satu, звонки, часть кампаний) в фильтр не попадают.';
   renderDiag();
 }
 
