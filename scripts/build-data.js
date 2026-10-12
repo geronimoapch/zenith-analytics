@@ -121,6 +121,7 @@ function leadSite(x, platform) {
 // ---------- копилка строк ----------
 const rows = new Map();
 function bucket(d, p, c, s = '') {
+  if (!s && p === 'Яндекс') s = 'site'; // вся реклама Яндекса идёт на zenith-i
   const k = d + '|' + p + '|' + c + '|' + s;
   let r = rows.get(k);
   if (!r) {
