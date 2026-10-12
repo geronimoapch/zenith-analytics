@@ -111,7 +111,8 @@ function leadSite(x, platform) {
   return idx ? (idx[c] || idx[c.toLowerCase()] || '') : '';
 }
 
-// ---------- копилка строк ----------const rows = new Map();
+// ---------- копилка строк ----------
+const rows = new Map();
 function bucket(d, p, c, s = '') {
   const k = d + '|' + p + '|' + c + '|' + s;
   let r = rows.get(k);
