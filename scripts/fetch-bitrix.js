@@ -60,6 +60,16 @@ async function getStages() {
   return map;
 }
 
+// Справочник «Источник»: id -> название (например, название веб-формы)
+async function getSources() {
+  const map = {};
+  try {
+    const d = await call('crm.status.list', { filter: { ENTITY_ID: 'SOURCE' } });
+    (d.result || []).forEach((s) => { map[s.STATUS_ID] = s.NAME; });
+  } catch (e) { console.log('Битрикс: справочник источников не получен: ' + e.message); }
+  return map;
+}
+
 async function listDeals(categoryId, from) {
   const select = [
     'ID', 'TITLE', 'STAGE_ID', 'CATEGORY_ID', 'DATE_CREATE', 'DATE_MODIFY', 'CLOSEDATE', 'OPPORTUNITY',
@@ -98,6 +108,7 @@ async function main() {
 
   const cats = await getCategories();
   const stages = await getStages();
+  const sources = await getSources();
   // В settings.json воронку можно указать названием или числом (id воронки)
   const pick = (v) => cats.find((c) => (typeof v === 'number' ? c.id === v : c.name.trim().toLowerCase() === String(v).trim().toLowerCase()));
   const leadCat = pick(settings.funnels.leads);
@@ -135,6 +146,7 @@ async function main() {
     amount: Number(x.OPPORTUNITY || 0),
     contact: x.CONTACT_ID || null,
     source: x.SOURCE_ID || '',
+    sourceName: sources[x.SOURCE_ID] || '',
     title: x.TITLE || '',
     srcDesc: x.SOURCE_DESCRIPTION || '',
     uf: ufOf(x),
@@ -159,6 +171,7 @@ async function main() {
   console.log('Битрикс, заполненные UF-поля: ' + top(ufFilled, 25));
   console.log('Битрикс, ссылки в UF-полях: ' + top(ufUrl, 25));
   console.log('Битрикс, SOURCE_ID: ' + top(srcIds, 15));
+  console.log('Битрикс, названия источников: ' + Object.entries(srcIds).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k]) => k + ' = ' + (sources[k] || '?')).join(' | '));
   console.log('Битрикс, повторяющиеся названия сделок: ' + top(titles, 15, 5));
   console.log(`Битрикс: лидов ${leads.length} («${leadCat.name}»), продаж ${sales.length} («${saleCat.name}»), с ${from}`);
 }
