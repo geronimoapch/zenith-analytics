@@ -60,21 +60,11 @@ async function getStages() {
   return map;
 }
 
-// Справочник «Источник»: id -> название (например, название веб-формы)
-async function getSources() {
-  const map = {};
-  try {
-    const d = await call('crm.status.list', { filter: { ENTITY_ID: 'SOURCE' } });
-    (d.result || []).forEach((s) => { map[s.STATUS_ID] = s.NAME; });
-  } catch (e) { console.log('Битрикс: справочник источников не получен: ' + e.message); }
-  return map;
-}
-
 async function listDeals(categoryId, from) {
   const select = [
     'ID', 'TITLE', 'STAGE_ID', 'CATEGORY_ID', 'DATE_CREATE', 'DATE_MODIFY', 'CLOSEDATE', 'OPPORTUNITY',
     'CONTACT_ID', 'SOURCE_ID', 'SOURCE_DESCRIPTION',
-    'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM', 'UF_*',
+    'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM',
   ];
   const out = [];
   let start = 0;
@@ -108,7 +98,6 @@ async function main() {
 
   const cats = await getCategories();
   const stages = await getStages();
-  const sources = await getSources();
   // В settings.json воронку можно указать названием или числом (id воронки)
   const pick = (v) => cats.find((c) => (typeof v === 'number' ? c.id === v : c.name.trim().toLowerCase() === String(v).trim().toLowerCase()));
   const leadCat = pick(settings.funnels.leads);
@@ -125,18 +114,6 @@ async function main() {
   const leads = await listDeals(leadCat.id, from);
   const sales = await listDeals(saleCat.id, from);
   const stageName = (id) => stages[id] || id;
-  // пользовательские поля сделки (UF_*): берём только непустые, обрезаем до 300 символов
-  const ufOf = (x) => {
-    const o = {};
-    Object.keys(x).forEach((k) => {
-      if (!k.startsWith('UF_')) return;
-      let val = x[k];
-      if (Array.isArray(val)) val = val.join(' ');
-      if (val === null || val === undefined || val === '' || val === false) return;
-      o[k] = String(val).slice(0, 300);
-    });
-    return o;
-  };
   const shape = (x) => ({
     id: x.ID,
     created: x.DATE_CREATE,
@@ -146,33 +123,11 @@ async function main() {
     amount: Number(x.OPPORTUNITY || 0),
     contact: x.CONTACT_ID || null,
     source: x.SOURCE_ID || '',
-    sourceName: sources[x.SOURCE_ID] || '',
-    title: x.TITLE || '',
-    srcDesc: x.SOURCE_DESCRIPTION || '',
-    uf: ufOf(x),
     utm: { source: x.UTM_SOURCE || '', medium: x.UTM_MEDIUM || '', campaign: x.UTM_CAMPAIGN || '', content: x.UTM_CONTENT || '', term: x.UTM_TERM || '' },
   });
 
   writeRaw('bitrix-leads.json', { fetchedAt: new Date().toISOString(), funnel: leadCat.name, rows: leads.map(shape) });
   writeRaw('bitrix-sales.json', { fetchedAt: new Date().toISOString(), funnel: saleCat.name, rows: sales.map(shape) });
-  // Диагностика: какие поля есть у сделок (без персональных данных: только названия полей, счётчики и адреса страниц без параметров)
-  const cnt = (o, k) => { o[k] = (o[k] || 0) + 1; };
-  const ufFilled = {}, ufUrl = {}, srcIds = {}, titles = {};
-  leads.forEach((x) => {
-    cnt(srcIds, x.SOURCE_ID || '(пусто)');
-    cnt(titles, String(x.TITLE || '').replace(/\d+/g, '#').slice(0, 40));
-    const uf = ufOf(x);
-    Object.entries(uf).forEach(([k, val]) => {
-      cnt(ufFilled, k);
-      if (/^https?:\/\//i.test(val)) { try { const u = new URL(val); const key = k + ' -> ' + u.host + u.pathname.slice(0, 40); cnt(ufUrl, key); } catch (e) { /* не ссылка */ } }
-    });
-  });
-  const top = (o, n, min) => Object.entries(o).filter(([, c]) => c >= (min || 1)).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, c]) => k + ': ' + c).join(' | ');
-  console.log('Битрикс, заполненные UF-поля: ' + top(ufFilled, 25));
-  console.log('Битрикс, ссылки в UF-полях: ' + top(ufUrl, 25));
-  console.log('Битрикс, SOURCE_ID: ' + top(srcIds, 15));
-  console.log('Битрикс, названия источников: ' + Object.entries(srcIds).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k]) => k + ' = ' + (sources[k] || '?')).join(' | '));
-  console.log('Битрикс, повторяющиеся названия сделок: ' + top(titles, 15, 5));
   console.log(`Битрикс: лидов ${leads.length} («${leadCat.name}»), продаж ${sales.length} («${saleCat.name}»), с ${from}`);
 }
 
