@@ -108,11 +108,7 @@ function leadSite(x, platform) {
   if (direct) return direct;
   const idx = siteIdx[platform];
   const c = String(u.campaign || '').trim();
-  const byCab = idx ? (idx[c] || idx[c.toLowerCase()] || '') : '';
-  if (byCab) return byCab;
-  // последний шанс: название сделки, описание источника и ссылки из пользовательских полей Битрикса
-  const urls = Object.values(x.uf || {}).filter((val) => /https?:\/\/|\.(kz|ru|com)\b/i.test(val)).join(' ');
-  return siteOfText([x.title, x.srcDesc, x.sourceName, urls].join(' '));
+  return idx ? (idx[c] || idx[c.toLowerCase()] || '') : '';
 }
 
 // ---------- копилка строк ----------
