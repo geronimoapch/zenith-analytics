@@ -183,6 +183,14 @@ yandex.rows.forEach((r) => {
   yandexMonths.add(month(r.date));
 });
 
+// кампании кабинета, в названии которых нет признака сайта (для диагностики)
+const noSite = {};
+[['Google', google.rows, (r) => r.costUsd], ['Meta', meta.rows, (r) => r.spendUsd]].forEach(([p, arr, usd]) => arr.forEach((r) => {
+  if (r.date < FIRST || siteOfText(r.campaignName)) return;
+  const k = p + ' | ' + r.campaignName;
+  noSite[k] = (noSite[k] || 0) + usd(r) * rateFor(r.date) * factor(p);
+}));
+
 // ---------- ручной расход (Satu, Яндекс и др.) ----------
 const today = new Date().toISOString().slice(0, 10);
 Object.entries(settings.manualSpendKzt || {}).forEach(([platform, byMonth]) => {
@@ -300,6 +308,7 @@ const output = {
   quals: qualList.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : Number(b.id) - Number(a.id))),
   diagnostics: {
     googleStale,
+    noSiteCampaigns: Object.entries(noSite).map(([k, v]) => ({ k, sp: Math.round(v) })).sort((a, b) => b.sp - a.sp).slice(0, 40),
     leads: { total: leadsCounted, withUtm: leadsWithUtm, clean: cleanTotal, qualified: qualTotal },
     utmShareByMonth: utmShare,
     payments: pay,
