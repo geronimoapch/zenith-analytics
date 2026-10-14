@@ -56,6 +56,9 @@
   .ql a{display:inline-block;margin:2px 14px 2px 0;color:var(--accent);text-decoration:none;white-space:nowrap}
   .ql a:hover{text-decoration:underline}
   .ql .dd{color:var(--muted);font-size:11px}
+  tr.s td{cursor:pointer;font-weight:600}
+  tr.s:hover td{background:var(--chip)}
+  tr.c2 td:first-child{padding-left:58px}
   @media (max-width:600px){ .kpi .v{font-size:18px} }
 </style>
 </head>
@@ -102,6 +105,8 @@ const monthLabel = (ym) => MONTHS[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0
 let DATA = null, site = 'all', group = 'platform', range = {from: '', to: ''};
 const open = new Set();
 const qopen = new Set();
+const SITE_ORDER = ['invest', 'lp', 'site', ''];
+const SITE_LABEL = {invest: 'zenith-invest', lp: 'LP', site: 'zenith-i', '': 'Прочее'};
 
 const iso = (d) => d.toISOString().slice(0, 10);
 // сегодняшняя дата по Алматы (UTC+5), чтобы ночью «сегодня» и «вчера» не уезжали
@@ -214,11 +219,34 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
     if (qopen.has(qkey(key, null))) html += qlist(key, null, top, sub);
     if (isOpen) {
       const subRows = rows.filter((r) => top(r) === key);
-      const subMap = aggregate(subRows, sub);
-      [...subMap.entries()].sort((x, y) => (y[1].sp - x[1].sp) || (y[1].cn - x[1].cn)).forEach(([sk, sa]) => {
-        html += `<tr class="c"><td>${sk}</td>${cells(sa, qkey(key, sk))}</tr>`;
-        if (qopen.has(qkey(key, sk))) html += qlist(key, sk, top, sub);
-      });
+      const bySpend = (x, y) => (y[1].sp - x[1].sp) || (y[1].cn - x[1].cn);
+      if (group === 'platform') {
+        // платформа -> сайт -> кампания
+        const siteMap = aggregate(subRows, (r) => r.s || '');
+        SITE_ORDER.filter((s) => siteMap.has(s)).forEach((s) => {
+          const sa = siteMap.get(s);
+          const sid = 'site|' + key + '|' + s;
+          const sOpen = open.has(sid);
+          const sqk = qkey(key, 's:' + s);
+          html += `<tr class="c s ${sOpen ? 'open' : ''}" data-id="${encodeURIComponent(sid)}"><td><span class="arrow">▸</span>${SITE_LABEL[s]}</td>${cells(sa, sqk)}</tr>`;
+          if (qopen.has(sqk)) html += qlist(key, s, top, (q) => q.s || '');
+          if (sOpen) {
+            const keyS = key + '\u0001' + s;
+            const topS = (r) => top(r) + '\u0001' + (r.s || '');
+            const campMap = aggregate(subRows.filter((r) => (r.s || '') === s), sub);
+            [...campMap.entries()].sort(bySpend).forEach(([ck, ca]) => {
+              html += `<tr class="c c2"><td>${ck.replace(/ — (Сайт|Ленд)$/, '')}</td>${cells(ca, qkey(keyS, ck))}</tr>`;
+              if (qopen.has(qkey(keyS, ck))) html += qlist(keyS, ck, topS, sub);
+            });
+          }
+        });
+      } else {
+        const subMap = aggregate(subRows, sub);
+        [...subMap.entries()].sort(bySpend).forEach(([sk, sa]) => {
+          html += `<tr class="c"><td>${sk}</td>${cells(sa, qkey(key, sk))}</tr>`;
+          if (qopen.has(qkey(key, sk))) html += qlist(key, sk, top, sub);
+        });
+      }
     }
   });
   html += `<tr class="t"><td>Итого</td>${cells(total, qkey(null, null))}</tr>`;
@@ -227,6 +255,9 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
   document.getElementById('tbl').innerHTML = html;
   document.querySelectorAll('.qb').forEach((b) => b.onclick = (e) => {
     e.stopPropagation(); const k = b.dataset.q; qopen.has(k) ? qopen.delete(k) : qopen.add(k); render();
+  });
+  document.querySelectorAll('tr.s').forEach((tr) => tr.onclick = () => {
+    const id = decodeURIComponent(tr.dataset.id); open.has(id) ? open.delete(id) : open.add(id); render();
   });
   document.querySelectorAll('tr.p').forEach((tr) => tr.onclick = () => {
     const id = tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); render();
