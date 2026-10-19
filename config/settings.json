@@ -51,16 +51,19 @@
   "excludeCampaignKeywords": [],
   "leadOverrides": {
     "14696": {
+      "platform": "Google",
       "site": "invest",
-      "family": "Огнезащита"
+      "family": "Огнез — Сайт"
     },
     "14838": {
+      "platform": "Google",
       "site": "invest",
-      "family": "Огнезащита"
+      "family": "Огнез — Сайт"
     },
     "14916": {
+      "platform": "Google",
       "site": "invest",
-      "family": "Огнезащита"
+      "family": "Огнез — Сайт"
     }
   }
 }
