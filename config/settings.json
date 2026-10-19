@@ -1,31 +1,66 @@
 {
   "firstDate": "2026-06-01",
-
-  "cabinetCurrency": { "google": "USD", "meta": "USD" },
-
+  "cabinetCurrency": {
+    "google": "USD",
+    "meta": "USD"
+  },
   "usdToKzt": {
     "default": 450
   },
-
   "commission": {
-    "Google": { "fee": 0.03, "vat": 0.16 },
-    "Meta": { "fee": 0.03, "vat": 0.16 },
-    "Яндекс": { "fee": 0, "vat": 0.16 },
-    "Satu": { "fee": 0, "vat": 0 }
+    "Google": {
+      "fee": 0.03,
+      "vat": 0.16
+    },
+    "Meta": {
+      "fee": 0.03,
+      "vat": 0.16
+    },
+    "Яндекс": {
+      "fee": 0,
+      "vat": 0.16
+    },
+    "Satu": {
+      "fee": 0,
+      "vat": 0
+    }
   },
-
-  "funnels":{"leads":0,"sales":14},
-
+  "funnels": {
+    "leads": 0,
+    "sales": 14
+  },
   "stages": {
     "qualified": "КВАЛИФИКАЦИЯ ПРОЙДЕНА",
-    "notClean": ["СПАМ", "ДУБЛЬ"],
+    "notClean": [
+      "СПАМ",
+      "ДУБЛЬ"
+    ],
     "paid": "ОПЛАТА ПОЛУЧЕНА"
   },
-
   "manualSpendKzt": {
-    "Satu": { "2026-06": 205000, "2026-07": 200000, "2026-08": 810000, "2026-09": 300000 },
-    "Яндекс": { "2026-09": 286178 }
+    "Satu": {
+      "2026-06": 205000,
+      "2026-07": 200000,
+      "2026-08": 810000,
+      "2026-09": 300000
+    },
+    "Яндекс": {
+      "2026-09": 286178
+    }
   },
-
-  "excludeCampaignKeywords": []
+  "excludeCampaignKeywords": [],
+  "leadOverrides": {
+    "14696": {
+      "site": "invest",
+      "family": "Огнезащита"
+    },
+    "14838": {
+      "site": "invest",
+      "family": "Огнезащита"
+    },
+    "14916": {
+      "site": "invest",
+      "family": "Огнезащита"
+    }
+  }
 }
