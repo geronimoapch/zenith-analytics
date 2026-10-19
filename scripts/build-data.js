@@ -36,9 +36,11 @@ const day = (s) => String(s || '').slice(0, 10);
 const month = (s) => day(s).slice(0, 7);
 
 // ---------- платформа по utm_source ----------
-function platformOf(utmSource) {
+function platformOf(utmSource, u) {
   const s = String(utmSource || '').trim().toLowerCase();
   if (!s) return null;
+  // google.com без medium/campaign/content — это органика (SEO), а не реклама
+  if (s === 'google.com' && u && !String(u.medium || '').trim() && !String(u.campaign || '').trim() && !String(u.content || '').trim()) return 'SEO';
   if (['meta', 'ig', 'fb', 'facebook', 'instagram', 'landing_meta'].includes(s)) return 'Meta';
   if (['google', 'google.com', 'landing_google'].includes(s)) return 'Google';
   if (['yandex', 'ya', 'yandex.kz', 'yandex.ru'].includes(s)) return 'Яндекс';
@@ -214,7 +216,7 @@ Object.entries(settings.manualSpendKzt || {}).forEach(([platform, byMonth]) => {
 const leads = bxLeads.rows.map((x) => ({
   ...x,
   day: day(x.created),
-  platform: platformOf(x.utm.source),
+  platform: platformOf(x.utm.source, x.utm),
 }));
 const stagesLeads = {};
 const utmSources = {};
@@ -284,7 +286,7 @@ bxSales.rows.forEach((s) => {
     if (first) { platform = first.platform; camp = first.family || utmFamily(first.platform, first.utm.campaign); site = first.site || ''; pay.viaContact++; }
   }
   if (!platform) {
-    const own = platformOf(s.utm.source);
+    const own = platformOf(s.utm.source, s.utm);
     if (own) { platform = own; camp = utmFamily(own, s.utm.campaign); site = leadSite(s, own); pay.viaOwnUtm++; }
   }
   if (!platform) { platform = 'Без метки'; camp = NO_CAMPAIGN; pay.unknown++; }
