@@ -122,6 +122,7 @@ function leadSite(x, platform) {
 const rows = new Map();
 function bucket(d, p, c, s = '') {
   if (!s && p === 'Яндекс') s = 'site'; // вся реклама Яндекса идёт на zenith-i
+  if (!s && p === 'Meta') s = 'lp'; // Мета без явного признака сайта — это LP
   const k = d + '|' + p + '|' + c + '|' + s;
   let r = rows.get(k);
   if (!r) {
@@ -227,14 +228,17 @@ leads.forEach((x) => {
   const st = up(x.stage);
   const clean = !NOT_CLEAN.includes(st);
   const qual = st === QUAL;
-  const platform = x.platform || 'Без метки';
-  const camp = x.platform ? utmFamily(x.platform, x.utm.campaign) : NO_CAMPAIGN;
+  // ручные правки по конкретным сделкам: settings.json -> leadOverrides { "id сделки": { site, family, platform } }
+  const ov = (settings.leadOverrides || {})[String(x.id)] || {};
+  const platform = ov.platform || x.platform || 'Без метки';
+  const camp = ov.family || (x.platform ? utmFamily(x.platform, x.utm.campaign) : NO_CAMPAIGN);
+  const campOut = ov.family || (platform === 'Без метки' ? NO_CAMPAIGN : camp);
   x.family = camp;
-  x.site = leadSite(x, x.platform);
-  const b = bucket(x.day, platform, platform === 'Без метки' ? NO_CAMPAIGN : camp, x.site);
+  x.site = ov.site || leadSite(x, x.platform);
+  const b = bucket(x.day, platform, campOut, x.site);
   b.l += 1;
   if (clean) b.cn += 1;
-  if (qual) { b.q += 1; qualList.push({ id: x.id, d: x.day, s: x.site, p: platform, c: platform === 'Без метки' ? NO_CAMPAIGN : camp }); }
+  if (qual) { b.q += 1; qualList.push({ id: x.id, d: x.day, s: b.s, p: platform, c: campOut }); }
 
   leadsCounted++; if (x.platform) leadsWithUtm++;
   if (clean) cleanTotal++; if (qual) qualTotal++;
