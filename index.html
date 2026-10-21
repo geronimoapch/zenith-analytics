@@ -301,7 +301,7 @@ async function init(){
     document.getElementById('updated').textContent = 'Нет данных';
     return;
   }
-  document.getElementById('updated').textContent = 'Обновлено: ' + new Date(DATA.generatedAt).toLocaleString('ru-RU') + ' · данные с ' + DATA.firstDate;
+  document.getElementById('updated').innerHTML = 'Обновлено: ' + new Date(DATA.generatedAt).toLocaleString('ru-RU') + ' · данные с ' + DATA.firstDate + ' · <a href="https://github.com/geronimoapch/zenith-analytics/actions/workflows/update-data.yml" target="_blank" rel="noopener" title="Откроется GitHub: нажми Run workflow, данные обновятся минуты через 2–3">↻ обновить сейчас</a>';
   const t = todayIso();
   range = {from: t.slice(0, 7) + '-01', to: t};
   document.getElementById('from').onchange = (e) => { range.from = e.target.value; sync(); };
