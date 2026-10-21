@@ -50,10 +50,30 @@
   },
   "excludeCampaignKeywords": [],
   "leadOverrides": {
+    "13758": {
+      "platform": "Google",
+      "site": "lp",
+      "family": "Наполь — Ленд"
+    },
+    "14606": {
+      "platform": "Google",
+      "site": "lp",
+      "family": "Раствор — Ленд"
+    },
+    "14666": {
+      "platform": "Google",
+      "site": "lp",
+      "family": "Огнез — Ленд"
+    },
     "14696": {
       "platform": "Google",
       "site": "invest",
       "family": "Огнез — Сайт"
+    },
+    "14704": {
+      "platform": "Meta",
+      "site": "lp",
+      "family": "ЛКМ"
     },
     "14838": {
       "platform": "Google",
@@ -64,6 +84,11 @@
       "platform": "Google",
       "site": "invest",
       "family": "Огнез — Сайт"
+    },
+    "15156": {
+      "platform": "Meta",
+      "site": "lp",
+      "family": "ЛКМ"
     }
   }
 }
