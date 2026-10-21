@@ -2,7 +2,7 @@ name: Обновление данных дашборда
 
 on:
   schedule:
-    - cron: '7 * * * *'      # каждый час, на 7-й минуте
+    - cron: '17,47 * * * *'      # каждый час, на 7-й минуте
   workflow_dispatch: {}       # плюс можно запустить вручную: вкладка Actions -> Run workflow
 
 permissions:
