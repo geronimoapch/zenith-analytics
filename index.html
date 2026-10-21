@@ -158,20 +158,18 @@ function aggregate(rows, keyFn){
 }
 
 function cells(a, qk){
-  const cpl = div(a.sp, a.cn), cpql = div(a.sp, a.q), roas = div(a.rev, a.sp);
+  const cpl = div(a.sp, a.cn), cpql = div(a.sp, a.q);
   return `<td>${a.sp ? money(a.sp) : '<span class="dim">—</span>'}</td>
-    <td>${a.cl ? fmt(a.cl) : '<span class="dim">—</span>'}</td>
     <td>${fmt(a.cn)}</td>
     <td>${a.sp ? money(cpl) : '<span class="dim">—</span>'}</td>
     <td><b>${fmt(a.q)}</b>${a.q && qk ? '<button class="qb" data-q="' + qk + '" title="Показать квал-лиды со ссылками на Битрикс">' + (qopen.has(qk) ? '▴' : '▾') + '</button>' : ''}</td>
     <td>${a.sp ? '<b>' + money(cpql) + '</b>' : '<span class="dim">—</span>'}</td>
     <td>${pct(a.q, a.cn)}</td>
     <td>${fmt(a.pay)}</td>
-    <td>${a.rev ? money(a.rev) : '<span class="dim">—</span>'}</td>
-    <td>${a.sp && a.rev ? roas.toFixed(2).replace('.', ',') + '×' : '<span class="dim">—</span>'}</td>`;
+    <td>${a.rev ? money(a.rev) : '<span class="dim">—</span>'}</td>`;
 }
 
-const HEAD = ['', 'Расход', 'Клики', 'Лиды (чистые)', 'Цена лида', 'Квалы', 'Цена квала', '% квалов', 'Оплаты', 'Выручка', 'ROAS'];
+const HEAD = ['', 'Расход', 'Лиды (чистые)', 'Цена лида', 'Квалы', 'Цена квала', '% квалов', 'Оплаты', 'Выручка'];
 
 const qkey = (a, b) => encodeURIComponent(JSON.stringify([group, a, b]));
 const DM = (d) => d.slice(8) + '.' + d.slice(5, 7);
@@ -184,7 +182,7 @@ function qlist(key, sk, topFn, subFn){
     const extra = showP ? ' · ' + q.p : (sk === null && q.c && q.c !== '(всё вместе)' ? ' · ' + q.c : '');
     return '<a href="https://' + DATA.portal + '/crm/deal/details/' + q.id + '/" target="_blank" rel="noopener" title="' + q.p + ' · ' + q.c + '">№' + q.id + ' <span class="dd">' + DM(q.d) + extra + '</span></a>';
   }).join('') : '<span class="dim">Список появится после ближайшего обновления данных</span>';
-  return '<tr class="ql"><td colspan="11">' + body + '</td></tr>';
+  return '<tr class="ql"><td colspan="9">' + body + '</td></tr>';
 }
 
 function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.d <= range.to)
@@ -200,7 +198,7 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
     ['Цена лида', money(div(total.sp, total.cn)), 'расход ÷ чистые лиды'],
     ['Цена квала', money(div(total.sp, total.q)), 'расход ÷ квалы'],
     ['Оплаты', fmt(total.pay), money(total.rev)],
-    ['ROAS', total.sp && total.rev ? (total.rev / total.sp).toFixed(2).replace('.', ',') + '×' : '—', 'выручка ÷ расход'],
+    ['% квалов', pct(total.q, total.cn), 'квалы ÷ чистые лиды'],
   ];
   document.getElementById('kpis').innerHTML = k.map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
 
