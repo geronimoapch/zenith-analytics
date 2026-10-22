@@ -301,7 +301,23 @@ async function init(){
     document.getElementById('updated').textContent = 'Нет данных';
     return;
   }
-  document.getElementById('updated').innerHTML = 'Обновлено: ' + new Date(DATA.generatedAt).toLocaleString('ru-RU') + ' · данные с ' + DATA.firstDate + ' · <a href="https://github.com/geronimoapch/zenith-analytics/actions/workflows/update-data.yml" target="_blank" rel="noopener" title="Откроется GitHub: нажми Run workflow, данные обновятся минуты через 2–3">↻ обновить сейчас</a>';
+  document.getElementById('updated').innerHTML = 'Обновлено: ' + new Date(DATA.generatedAt).toLocaleString('ru-RU') + ' · данные с ' + DATA.firstDate + ' · <a href="#" id="refreshBtn" title="Запустить сбор свежих данных, займёт 2–3 минуты">↻ обновить сейчас</a>';
+  (function () {
+    const b = document.getElementById('refreshBtn'); if (!b) return;
+    const URL_ = 'https://script.google.com/macros/s/AKfycby5b9prz9ivi28-tv270ywV0l4VnrNbG0sFpfi3LODcsFWoG4aPpAURRFKWOvIc0Lvl/exec';
+    b.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      b.textContent = 'Запускаю…';
+      try {
+        const r = await fetch(URL_);
+        const j = await r.json();
+        b.textContent = j.ok ? (j.note === 'Запущено' ? 'Запущено, через 3–4 минуты обнови страницу' : j.note) : 'Не вышло: ' + j.note;
+      } catch (err) {
+        try { await fetch(URL_, { mode: 'no-cors' }); b.textContent = 'Запрос отправлен, через 3–4 минуты обнови страницу'; }
+        catch (e2) { b.textContent = 'Не вышло, попробуй позже'; }
+      }
+    });
+  })();
   const t = todayIso();
   range = {from: t.slice(0, 7) + '-01', to: t};
   document.getElementById('from').onchange = (e) => { range.from = e.target.value; sync(); };
