@@ -308,13 +308,15 @@ async function init(){
     b.addEventListener('click', async (ev) => {
       ev.preventDefault();
       b.textContent = 'Запускаю…';
+      const done = (m) => { b.textContent = m; };
+      let finished = false;
+      const timer = setTimeout(() => { if (!finished) { finished = true; done('Запрос отправлен, через 3–4 минуты обнови страницу'); } }, 7000);
       try {
         const r = await fetch(URL_);
         const j = await r.json();
-        b.textContent = j.ok ? (j.note === 'Запущено' ? 'Запущено, через 3–4 минуты обнови страницу' : j.note) : 'Не вышло: ' + j.note;
+        if (!finished) { finished = true; clearTimeout(timer); done(j.ok ? (j.note === 'Запущено' ? 'Запущено, через 3–4 минуты обнови страницу' : j.note) : 'Не вышло: ' + j.note); }
       } catch (err) {
-        try { await fetch(URL_, { mode: 'no-cors' }); b.textContent = 'Запрос отправлен, через 3–4 минуты обнови страницу'; }
-        catch (e2) { b.textContent = 'Не вышло, попробуй позже'; }
+        if (!finished) { finished = true; clearTimeout(timer); fetch(URL_, { mode: 'no-cors' }).catch(() => {}); done('Запрос отправлен, через 3–4 минуты обнови страницу'); }
       }
     });
   })();
