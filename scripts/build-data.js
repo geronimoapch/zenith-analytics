@@ -268,6 +268,7 @@ const plusOneDay = (iso) => {
 };
 
 const stagesSales = {};
+const payList = [];
 const pay = { total: 0, viaContact: 0, viaOwnUtm: 0, unknown: 0, noContact: 0 };
 
 bxSales.rows.forEach((s) => {
@@ -294,6 +295,7 @@ bxSales.rows.forEach((s) => {
 
   const b = bucket(payDay, platform, camp, site);
   b.pay += 1; b.rev += s.amount;
+  payList.push({ id: s.id, d: payDay, s: b.s, p: platform, c: camp, a: Math.round(s.amount) });
 });
 
 // ---------- итог ----------
@@ -311,6 +313,7 @@ const output = {
   commission: comm,
   portal: settings.bitrixPortal || 'macron.bitrix24.kz',
   rows: outRows,
+  pays: payList.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : Number(b.id) - Number(a.id))),
   quals: qualList.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : Number(b.id) - Number(a.id))),
   diagnostics: {
     googleStale,
