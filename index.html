@@ -165,7 +165,7 @@ function cells(a, qk){
     <td><b>${fmt(a.q)}</b>${a.q && qk ? '<button class="qb" data-q="' + qk + '" title="Показать квал-лиды со ссылками на Битрикс">' + (qopen.has(qk) ? '▴' : '▾') + '</button>' : ''}</td>
     <td>${a.sp ? '<b>' + money(cpql) + '</b>' : '<span class="dim">—</span>'}</td>
     <td>${pct(a.q, a.cn)}</td>
-    <td>${fmt(a.pay)}</td>
+    <td>${fmt(a.pay)}${a.pay && qk ? '<button class="qb" data-q="p' + qk + '" title="Показать оплаты со ссылками на Битрикс">' + (qopen.has('p' + qk) ? '▴' : '▾') + '</button>' : ''}</td>
     <td>${a.rev ? money(a.rev) : '<span class="dim">—</span>'}</td>`;
 }
 
@@ -173,14 +173,14 @@ const HEAD = ['', 'Расход', 'Лиды (чистые)', 'Цена лида'
 
 const qkey = (a, b) => encodeURIComponent(JSON.stringify([group, a, b]));
 const DM = (d) => d.slice(8) + '.' + d.slice(5, 7);
-function qlist(key, sk, topFn, subFn){
-  const list = (DATA.quals || []).filter((q) => q.d >= range.from && q.d <= range.to &&
+function qlist(key, sk, topFn, subFn, src){
+  const list = (src === 'pays' ? (DATA.pays || []) : (DATA.quals || [])).filter((q) => q.d >= range.from && q.d <= range.to &&
     (key === null || topFn(q) === key) && (sk === null || subFn(q) === sk) &&
     (site === 'all' || (site === 'other' ? !q.s : q.s === site)));
   const showP = key === null || (group === 'month' && sk === null);
   const body = list.length ? list.map((q) => {
     const extra = showP ? ' · ' + q.p : (sk === null && q.c && q.c !== '(всё вместе)' ? ' · ' + q.c : '');
-    return '<a href="https://' + DATA.portal + '/crm/deal/details/' + q.id + '/" target="_blank" rel="noopener" title="' + q.p + ' · ' + q.c + '">№' + q.id + ' <span class="dd">' + DM(q.d) + extra + '</span></a>';
+    return '<a href="https://' + DATA.portal + '/crm/deal/details/' + q.id + '/" target="_blank" rel="noopener" title="' + q.p + ' · ' + q.c + '">№' + q.id + ' <span class="dd">' + DM(q.d) + extra + (q.a ? ' · ' + money(q.a) : '') + '</span></a>';
   }).join('') : '<span class="dim">Список появится после ближайшего обновления данных</span>';
   return '<tr class="ql"><td colspan="9">' + body + '</td></tr>';
 }
@@ -215,6 +215,7 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
     const label = group === 'month' ? monthLabel(key) : key;
     html += `<tr class="p ${isOpen ? 'open' : ''}" data-id="${id}"><td><span class="arrow">▸</span>${label}</td>${cells(a, qkey(key, null))}</tr>`;
     if (qopen.has(qkey(key, null))) html += qlist(key, null, top, sub);
+    if (qopen.has('p' + qkey(key, null))) html += qlist(key, null, top, sub, 'pays');
     if (isOpen) {
       const subRows = rows.filter((r) => top(r) === key);
       const bySpend = (x, y) => (y[1].sp - x[1].sp) || (y[1].cn - x[1].cn);
@@ -228,6 +229,7 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
           const sqk = qkey(key, 's:' + s);
           html += `<tr class="c s ${sOpen ? 'open' : ''}" data-id="${encodeURIComponent(sid)}"><td><span class="arrow">▸</span>${SITE_LABEL[s]}</td>${cells(sa, sqk)}</tr>`;
           if (qopen.has(sqk)) html += qlist(key, s, top, (q) => q.s || '');
+          if (qopen.has('p' + sqk)) html += qlist(key, s, top, (q) => q.s || '', 'pays');
           if (sOpen) {
             const keyS = key + '\u0001' + s;
             const topS = (r) => top(r) + '\u0001' + (r.s || '');
@@ -235,6 +237,7 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
             [...campMap.entries()].sort(bySpend).forEach(([ck, ca]) => {
               html += `<tr class="c c2"><td>${ck.replace(/ — (Сайт|Ленд)$/, '')}</td>${cells(ca, qkey(keyS, ck))}</tr>`;
               if (qopen.has(qkey(keyS, ck))) html += qlist(keyS, ck, topS, sub);
+              if (qopen.has('p' + qkey(keyS, ck))) html += qlist(keyS, ck, topS, sub, 'pays');
             });
           }
         });
@@ -243,12 +246,14 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
         [...subMap.entries()].sort(bySpend).forEach(([sk, sa]) => {
           html += `<tr class="c"><td>${sk}</td>${cells(sa, qkey(key, sk))}</tr>`;
           if (qopen.has(qkey(key, sk))) html += qlist(key, sk, top, sub);
+          if (qopen.has('p' + qkey(key, sk))) html += qlist(key, sk, top, sub, 'pays');
         });
       }
     }
   });
   html += `<tr class="t"><td>Итого</td>${cells(total, qkey(null, null))}</tr>`;
   if (qopen.has(qkey(null, null))) html += qlist(null, null, top, sub);
+  if (qopen.has('p' + qkey(null, null))) html += qlist(null, null, top, sub, 'pays');
   html += '</tbody>';
   document.getElementById('tbl').innerHTML = html;
   document.querySelectorAll('.qb').forEach((b) => b.onclick = (e) => {
