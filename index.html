@@ -48,6 +48,11 @@
   details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-top:16px}
   summary{cursor:pointer;font-weight:600}
   details table{min-width:0;margin-top:8px}
+  #daily{margin-top:16px}
+  #daily summary{cursor:pointer;font-weight:600;padding:6px 0}
+  #daily table{min-width:900px}
+  #daily td,#daily th{padding:9px 12px}
+  #daily tbody tr:not(.ql) td{border-bottom:1px solid var(--line)}
   details td,details th{padding:5px 8px}
   .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
   .err{background:var(--card);border:1px solid var(--bad);color:var(--bad);padding:14px;border-radius:12px}
@@ -89,6 +94,7 @@
   <div class="kpis" id="kpis"></div>
   <div class="tablewrap"><table id="tbl"></table></div>
   <div class="note" id="notes"></div>
+  <details id="daily"><summary>Разбивка по дням (общая, без разрезов по платформам)</summary><div class="tablewrap"><table id="dtbl"></table></div></details>
 
   <details id="diag"><summary>Диагностика: что не сошлось и что поправить</summary><div id="diagBody"></div></details>
 </div>
@@ -256,6 +262,18 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
   if (qopen.has('p' + qkey(null, null))) html += qlist(null, null, top, sub, 'pays');
   html += '</tbody>';
   document.getElementById('tbl').innerHTML = html;
+  {
+    const dm = aggregate(rows, (r) => r.d);
+    const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+    let dh = '<thead><tr>' + HEAD.map((h, i) => '<th>' + (i === 0 ? 'Дата' : h) + '</th>').join('') + '</tr></thead><tbody>';
+    [...dm.keys()].sort().reverse().forEach((d) => {
+      const k = 'D' + d;
+      dh += '<tr><td>' + d.slice(8) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4) + ' <span class="dim">' + WD[new Date(d + 'T00:00:00Z').getUTCDay()] + '</span></td>' + cells(dm.get(d), k) + '</tr>';
+      if (qopen.has(k)) dh += qlist(d, null, (q) => q.d, null);
+      if (qopen.has('p' + k)) dh += qlist(d, null, (q) => q.d, null, 'pays');
+    });
+    document.getElementById('dtbl').innerHTML = dh + '</tbody>';
+  }
   document.querySelectorAll('.qb').forEach((b) => b.onclick = (e) => {
     e.stopPropagation(); const k = b.dataset.q; qopen.has(k) ? qopen.delete(k) : qopen.add(k); render();
   });
