@@ -86,6 +86,27 @@ async function getContacts(ids) {
   return out;
 }
 
+// Вся история сделок указанных клиентов (контакт или компания): любые воронки и любые даты
+async function listHistory(field, ids) {
+  const select = [
+    'ID', 'CATEGORY_ID', 'DATE_CREATE', 'CLOSEDATE', 'OPPORTUNITY', 'STAGE_ID', 'CONTACT_ID', 'COMPANY_ID', 'SOURCE_ID',
+    'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM',
+  ];
+  const out = [];
+  try {
+    for (let i = 0; i < ids.length; i += 20) {
+      let start = 0;
+      while (true) {
+        const d = await call('crm.deal.list', { filter: { [field]: ids.slice(i, i + 20) }, select, order: { ID: 'ASC' }, start });
+        (d.result || []).forEach((x) => out.push(x));
+        if (d.next === undefined || d.next === null) break;
+        start = d.next;
+      }
+    }
+  } catch (e) { console.log('Битрикс: история клиентов получена не полностью: ' + e.message); }
+  return out;
+}
+
 async function listDeals(categoryId, from) {
   const select = [
     'ID', 'TITLE', 'STAGE_ID', 'CATEGORY_ID', 'DATE_CREATE', 'DATE_MODIFY', 'CLOSEDATE', 'OPPORTUNITY',
@@ -168,6 +189,29 @@ async function main() {
     })),
   });
   console.log(`Битрикс: контактов ${contacts.length}`);
+
+  // Недавно оплаченные сделки -> вся история их клиентов (контакты и компании)
+  const PAIDNAME = String((settings.stages && settings.stages.paid) || 'ОПЛАТА ПОЛУЧЕНА').trim().toUpperCase();
+  const since = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+  const recent = sales.filter((x) => String(stageName(x.STAGE_ID)).toUpperCase() === PAIDNAME && String(x.CLOSEDATE || x.DATE_MODIFY || '').slice(0, 10) >= since);
+  const rc = [...new Set(recent.map((x) => x.CONTACT_ID).filter((x) => x && x !== '0'))];
+  const rcomp = [...new Set([
+    ...recent.map((x) => x.COMPANY_ID),
+    ...contacts.filter((c) => rc.includes(c.ID)).map((c) => c.COMPANY_ID),
+  ].filter((x) => x && x !== '0'))];
+  const hist = [...(await listHistory('CONTACT_ID', rc)), ...(await listHistory('COMPANY_ID', rcomp))];
+  const seen = new Set();
+  const histRows = hist.filter((x) => (seen.has(x.ID) ? false : seen.add(x.ID)));
+  writeRaw('bitrix-history.json', {
+    fetchedAt: new Date().toISOString(),
+    rows: histRows.map((x) => ({
+      id: x.ID, category: x.CATEGORY_ID, created: x.DATE_CREATE, amount: Number(x.OPPORTUNITY || 0),
+      contact: x.CONTACT_ID && x.CONTACT_ID !== '0' ? x.CONTACT_ID : null, company: x.COMPANY_ID && x.COMPANY_ID !== '0' ? x.COMPANY_ID : null,
+      source: x.SOURCE_ID || '', sourceName: sources[x.SOURCE_ID] || x.SOURCE_ID || '',
+      utm: { source: x.UTM_SOURCE || '', medium: x.UTM_MEDIUM || '', campaign: x.UTM_CAMPAIGN || '', content: x.UTM_CONTENT || '', term: x.UTM_TERM || '' },
+    })),
+  });
+  console.log(`Битрикс: история клиентов: сделок ${histRows.length} (клиентов ${rc.length}, компаний ${rcomp.length})`);
   console.log(`Битрикс: лидов ${leads.length} («${leadCat.name}»), продаж ${sales.length} («${saleCat.name}»), с ${from}`);
 }
 
