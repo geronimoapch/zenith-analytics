@@ -24,6 +24,7 @@ const meta = rawFile('meta-ads.json', { rows: [] });
 const yandex = rawFile('yandex-direct.json', { rows: [] });
 const bxLeads = rawFile('bitrix-leads.json', { rows: [] });
 const bxSales = rawFile('bitrix-sales.json', { rows: [] });
+const bxContacts = rawFile('bitrix-contacts.json', { rows: [] });
 
 const FIRST = settings.firstDate || '2026-06-01';
 const ST = settings.stages || {};
@@ -270,9 +271,32 @@ const plusOneDay = (iso) => {
 const stagesSales = {};
 const payList = [];
 const unknownPays = [];
+// История клиента: все его заявки и сделки с понятной меткой (по контакту и по компании)
+const contactById = new Map(bxContacts.rows.map((c) => [String(c.id), c]));
+const histByContact = new Map(), histByCompany = new Map();
+const addHist = (map, k, h) => { if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(h); };
+const companyOfContact = (cid) => { const c = contactById.get(String(cid)); return c && c.company; };
+const pushHist = (r, kind) => {
+  const p = r.platform !== undefined ? r.platform : platformOf(r.utm.source, r.utm);
+  if (!p) return;
+  const h = { id: r.id, kind, created: r.created, platform: p, camp: r.family || utmFamily(p, r.utm.campaign), site: r.site !== undefined ? r.site : leadSite(r, p) };
+  const comp = r.company || companyOfContact(r.contact);
+  addHist(histByContact, r.contact && String(r.contact), h);
+  addHist(histByCompany, comp && String(comp), h);
+};
+leads.forEach((x) => pushHist(x, 'лид'));
+bxSales.rows.forEach((x) => pushHist(x, 'сделка'));
+const channelOf = (name) => {
+  const n = String(name || '').toLowerCase();
+  if (!n) return 'Источник не указан';
+  if (/wapi|whatsapp|ватсап|вацап/.test(n)) return 'WhatsApp';
+  if (/звонок|call|телефон/.test(n)) return 'Звонок';
+  if (/почт|mail/.test(n)) return 'Email';
+  return name;
+};
 const allByContact = new Map();
 leads.forEach((x) => { if (!x.contact) return; if (!allByContact.has(x.contact)) allByContact.set(x.contact, []); allByContact.get(x.contact).push(x); });
-const pay = { total: 0, viaContact: 0, viaOwnUtm: 0, unknown: 0, noContact: 0 };
+const pay = { total: 0, viaContact: 0, viaOwnUtm: 0, viaHistory: 0, viaContactUtm: 0, unknown: 0, noContact: 0 };
 
 bxSales.rows.forEach((s) => {
   stagesSales[s.stage] = (stagesSales[s.stage] || 0) + 1;
@@ -294,7 +318,25 @@ bxSales.rows.forEach((s) => {
     if (own) { platform = own; camp = utmFamily(own, s.utm.campaign); site = leadSite(s, own); pay.viaOwnUtm++; }
   }
   if (!platform) {
-    platform = 'Без метки'; camp = NO_CAMPAIGN; pay.unknown++;
+    // повторный клиент: ищем первую понятную метку у любой его заявки или сделки (контакт, затем компания)
+    const comp = s.company || companyOfContact(s.contact);
+    const pool = [...(histByContact.get(String(s.contact)) || []), ...(comp ? histByCompany.get(String(comp)) || [] : [])]
+      .filter((h) => h.id !== s.id && day(h.created) <= payDay)
+      .sort((a, b) => (a.created < b.created ? -1 : 1));
+    if (pool.length) { const h = pool[0]; platform = h.platform; camp = h.camp; site = h.site || ''; pay.viaHistory++; }
+  }
+  if (!platform) {
+    // собственные UTM в карточке контакта
+    const c = contactById.get(String(s.contact));
+    const cp = c && platformOf(c.utm.source, c.utm);
+    if (cp) { platform = cp; camp = utmFamily(cp, c.utm.campaign); site = leadSite(c, cp); pay.viaContactUtm++; }
+  }
+  if (!platform) {
+    // метки нигде нет: показываем хотя бы канал (источник сделки, заявки или контакта)
+    const c = contactById.get(String(s.contact));
+    const ls = allByContact.get(s.contact) || [];
+    const srcName = s.sourceName || (ls.find((x) => x.sourceName) || {}).sourceName || (c && c.sourceName) || '';
+    platform = 'Без метки'; camp = channelOf(srcName); pay.unknown++;
     if (payDay >= '2026-10-15') unknownPays.push({ id: s.id, created: s.created, paid: payDay, amount: Math.round(s.amount), contact: s.contact, utm: s.utm, leadsOfContact: (allByContact.get(s.contact) || []).map((x) => ({ id: x.id, created: x.created, stage: x.stage, utm: x.utm })) });
   }
   if (platform !== 'Без метки' && !HAS_API.has(platform)) camp = NO_CAMPAIGN;
