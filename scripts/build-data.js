@@ -25,6 +25,7 @@ const yandex = rawFile('yandex-direct.json', { rows: [] });
 const bxLeads = rawFile('bitrix-leads.json', { rows: [] });
 const bxSales = rawFile('bitrix-sales.json', { rows: [] });
 const bxContacts = rawFile('bitrix-contacts.json', { rows: [] });
+const bxHistory = rawFile('bitrix-history.json', { rows: [] });
 
 const FIRST = settings.firstDate || '2026-06-01';
 const ST = settings.stages || {};
@@ -286,6 +287,9 @@ const pushHist = (r, kind) => {
 };
 leads.forEach((x) => pushHist(x, 'лид'));
 bxSales.rows.forEach((x) => pushHist(x, 'сделка'));
+bxHistory.rows.forEach((x) => pushHist(x, 'сделка (история)'));
+const histSrc = new Map();
+bxHistory.rows.forEach((x) => { if (x.contact && x.sourceName && !histSrc.has(String(x.contact))) histSrc.set(String(x.contact), x.sourceName); });
 const channelOf = (name) => {
   const n = String(name || '').toLowerCase();
   if (!n) return 'Источник не указан';
@@ -335,7 +339,7 @@ bxSales.rows.forEach((s) => {
     // метки нигде нет: показываем хотя бы канал (источник сделки, заявки или контакта)
     const c = contactById.get(String(s.contact));
     const ls = allByContact.get(s.contact) || [];
-    const srcName = s.sourceName || (ls.find((x) => x.sourceName) || {}).sourceName || (c && c.sourceName) || '';
+    const srcName = s.sourceName || (ls.find((x) => x.sourceName) || {}).sourceName || (c && c.sourceName) || histSrc.get(String(s.contact)) || '';
     platform = 'Без метки'; camp = channelOf(srcName); pay.unknown++;
     if (payDay >= '2026-10-15') unknownPays.push({ id: s.id, created: s.created, paid: payDay, amount: Math.round(s.amount), contact: s.contact, utm: s.utm, leadsOfContact: (allByContact.get(s.contact) || []).map((x) => ({ id: x.id, created: x.created, stage: x.stage, utm: x.utm })) });
   }
