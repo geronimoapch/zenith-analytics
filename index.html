@@ -218,7 +218,7 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
   order.forEach(([key, a]) => {
     const id = group + '|' + key;
     const isOpen = open.has(id);
-    const label = group === 'month' ? monthLabel(key) : key;
+    const label = group === 'month' ? monthLabel(key) : (key === 'Без метки' ? 'Без метки / повторные клиенты' : key);
     html += `<tr class="p ${isOpen ? 'open' : ''}" data-id="${id}"><td><span class="arrow">▸</span>${label}</td>${cells(a, qkey(key, null))}</tr>`;
     if (qopen.has(qkey(key, null))) html += qlist(key, null, top, sub);
     if (qopen.has('p' + qkey(key, null))) html += qlist(key, null, top, sub, 'pays');
