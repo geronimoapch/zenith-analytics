@@ -269,6 +269,9 @@ const plusOneDay = (iso) => {
 
 const stagesSales = {};
 const payList = [];
+const unknownPays = [];
+const allByContact = new Map();
+leads.forEach((x) => { if (!x.contact) return; if (!allByContact.has(x.contact)) allByContact.set(x.contact, []); allByContact.get(x.contact).push(x); });
 const pay = { total: 0, viaContact: 0, viaOwnUtm: 0, unknown: 0, noContact: 0 };
 
 bxSales.rows.forEach((s) => {
@@ -290,7 +293,10 @@ bxSales.rows.forEach((s) => {
     const own = platformOf(s.utm.source, s.utm);
     if (own) { platform = own; camp = utmFamily(own, s.utm.campaign); site = leadSite(s, own); pay.viaOwnUtm++; }
   }
-  if (!platform) { platform = 'Без метки'; camp = NO_CAMPAIGN; pay.unknown++; }
+  if (!platform) {
+    platform = 'Без метки'; camp = NO_CAMPAIGN; pay.unknown++;
+    if (payDay >= '2026-10-15') unknownPays.push({ id: s.id, created: s.created, paid: payDay, amount: Math.round(s.amount), contact: s.contact, utm: s.utm, leadsOfContact: (allByContact.get(s.contact) || []).map((x) => ({ id: x.id, created: x.created, stage: x.stage, utm: x.utm })) });
+  }
   if (platform !== 'Без метки' && !HAS_API.has(platform)) camp = NO_CAMPAIGN;
 
   const b = bucket(payDay, platform, camp, site);
@@ -317,6 +323,7 @@ const output = {
   quals: qualList.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : Number(b.id) - Number(a.id))),
   diagnostics: {
     googleStale,
+    unknownPays,
     noSiteCampaigns: Object.entries(noSite).map(([k, v]) => ({ k, sp: Math.round(v) })).sort((a, b) => b.sp - a.sp).slice(0, 40),
     leads: { total: leadsCounted, withUtm: leadsWithUtm, clean: cleanTotal, qualified: qualTotal },
     utmShareByMonth: utmShare,
