@@ -60,10 +60,36 @@ async function getStages() {
   return map;
 }
 
+// Справочник источников: SOURCE_ID -> название («Звонок», «Wapi …» и т.п.)
+async function getSources() {
+  const map = {};
+  try {
+    const d = await call('crm.status.list', { filter: { ENTITY_ID: 'SOURCE' } });
+    (d.result || []).forEach((s) => { map[s.STATUS_ID] = s.NAME; });
+  } catch (e) { console.log('Битрикс: справочник источников не получен: ' + e.message); }
+  return map;
+}
+
+// Контакты клиентов: свой источник и UTM + компания (для поиска истории у повторных клиентов)
+async function getContacts(ids) {
+  const out = [];
+  try {
+    for (let i = 0; i < ids.length; i += 50) {
+      const batch = ids.slice(i, i + 50);
+      const d = await call('crm.contact.list', {
+        filter: { ID: batch },
+        select: ['ID', 'COMPANY_ID', 'SOURCE_ID', 'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM'],
+      });
+      (d.result || []).forEach((x) => out.push(x));
+    }
+  } catch (e) { console.log('Битрикс: контакты получены не полностью: ' + e.message); }
+  return out;
+}
+
 async function listDeals(categoryId, from) {
   const select = [
     'ID', 'TITLE', 'STAGE_ID', 'CATEGORY_ID', 'DATE_CREATE', 'DATE_MODIFY', 'CLOSEDATE', 'OPPORTUNITY',
-    'CONTACT_ID', 'SOURCE_ID', 'SOURCE_DESCRIPTION',
+    'CONTACT_ID', 'COMPANY_ID', 'SOURCE_ID', 'SOURCE_DESCRIPTION',
     'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM',
   ];
   const out = [];
@@ -113,6 +139,7 @@ async function main() {
 
   const leads = await listDeals(leadCat.id, from);
   const sales = await listDeals(saleCat.id, from);
+  const sources = await getSources();
   const stageName = (id) => stages[id] || id;
   const shape = (x) => ({
     id: x.ID,
@@ -123,11 +150,24 @@ async function main() {
     amount: Number(x.OPPORTUNITY || 0),
     contact: x.CONTACT_ID || null,
     source: x.SOURCE_ID || '',
+    sourceName: sources[x.SOURCE_ID] || x.SOURCE_ID || '',
+    company: x.COMPANY_ID && x.COMPANY_ID !== '0' ? x.COMPANY_ID : null,
     utm: { source: x.UTM_SOURCE || '', medium: x.UTM_MEDIUM || '', campaign: x.UTM_CAMPAIGN || '', content: x.UTM_CONTENT || '', term: x.UTM_TERM || '' },
   });
 
   writeRaw('bitrix-leads.json', { fetchedAt: new Date().toISOString(), funnel: leadCat.name, rows: leads.map(shape) });
   writeRaw('bitrix-sales.json', { fetchedAt: new Date().toISOString(), funnel: saleCat.name, rows: sales.map(shape) });
+  const cids = [...new Set([...leads, ...sales].map((x) => x.CONTACT_ID).filter((x) => x && x !== '0'))];
+  const contacts = await getContacts(cids);
+  writeRaw('bitrix-contacts.json', {
+    fetchedAt: new Date().toISOString(),
+    rows: contacts.map((x) => ({
+      id: x.ID, company: x.COMPANY_ID && x.COMPANY_ID !== '0' ? x.COMPANY_ID : null,
+      source: x.SOURCE_ID || '', sourceName: sources[x.SOURCE_ID] || x.SOURCE_ID || '',
+      utm: { source: x.UTM_SOURCE || '', medium: x.UTM_MEDIUM || '', campaign: x.UTM_CAMPAIGN || '', content: x.UTM_CONTENT || '', term: x.UTM_TERM || '' },
+    })),
+  });
+  console.log(`Битрикс: контактов ${contacts.length}`);
   console.log(`Битрикс: лидов ${leads.length} («${leadCat.name}»), продаж ${sales.length} («${saleCat.name}»), с ${from}`);
 }
 
