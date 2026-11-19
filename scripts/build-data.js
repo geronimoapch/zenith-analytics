@@ -224,6 +224,60 @@ const leads = bxLeads.rows.map((x) => ({
   day: day(x.created),
   platform: platformOf(x.utm.source, x.utm),
 }));
+
+// ---------- лиды без UTM: ищем источник по иерархии ----------
+// 1) у этого же контакта есть другая сделка/карточка контакта с UTM -> берём её
+// 2) страница заявки из SOURCE_DESCRIPTION: /lp/*-meta/ -> Meta, другие /lp/ -> Google (лендинги только под рекламу)
+// 3) обычная страница сайта -> «Без метки», но с направлением по странице
+// 4) остальное -> «Без метки» с разбивкой по источнику Битрикса (звонок, WhatsApp и т.д.)
+const DIRS = [
+  [/antikor|антикор/, 'Антикор'], [/gidroiz|гидроиз/, 'Гидроизоляция'], [/ognez|огнез/, 'Огнезащита'],
+  [/rastvor|раствор/, 'Растворители'], [/poly|napoln|polimern|nalivn|наполь|пол(ы|ов)/, 'Напольные'],
+  [/lkm|lakokras|laki-kraski|лкм|лакокрас/, 'ЛКМ'],
+];
+const dirOf = (t) => { const s = String(t || '').toLowerCase(); for (const [re, d] of DIRS) if (re.test(s)) return d; return ''; };
+const GOOGLE_LP = { 'Антикор': 'Антикор — Ленд', 'Гидроизоляция': 'Гидроизоляция — Сайт', 'Огнезащита': 'Огнез — Ленд', 'Растворители': 'Раствор — Ленд', 'ЛКМ': 'ЛКМ — Ленд', 'Напольные': 'Наполь — Ленд' };
+const pageOf = (x) => { const m = String(x.sdesc || '').match(/https?:\/\/[^\s,]+/); return m ? m[0] : ''; };
+const ctLeads = new Map();
+leads.forEach((x) => { if (x.contact && x.platform) { if (!ctLeads.has(x.contact)) ctLeads.set(x.contact, []); ctLeads.get(x.contact).push(x); } });
+const ctCard = new Map(bxContacts.rows.map((c) => [String(c.id), c]));
+const noUtm = { total: 0, by: {}, sources: {}, pages: {} };
+leads.forEach((x) => {
+  if (x.platform) return;
+  let a = null;
+  const other = (ctLeads.get(x.contact) || []).filter((y) => y.id !== x.id);
+  if (other.length) {
+    const prev = other.filter((y) => y.created <= x.created).sort((p, q) => (p.created < q.created ? 1 : -1))[0] || other[0];
+    a = { platform: prev.platform, utm: prev.utm, how: 'контакт: другая сделка с UTM' };
+  } else {
+    const c = x.contact && ctCard.get(String(x.contact));
+    const cp = c && platformOf(c.utm.source, c.utm);
+    if (cp) a = { platform: cp, utm: c.utm, how: 'контакт: UTM в карточке' };
+  }
+  const page = pageOf(x);
+  let path = '';
+  try { path = page ? new URL(page).pathname : ''; } catch (e) { path = ''; }
+  const dir = dirOf(path) || dirOf(x.title);
+  if (!a && /^\/lp\//.test(path)) {
+    a = /-meta\/?$/.test(path) || /\/lp\/poly-meta/.test(path)
+      ? { platform: 'Meta', family: dir || '(лендинг без направления)', site: 'lp', how: 'страница: лендинг Meta' }
+      : { platform: 'Google', family: GOOGLE_LP[dir] || '(лендинг без направления)', site: 'lp', how: 'страница: лендинг Google' };
+  }
+  if (!a && page) a = { platform: 'Без метки', family: 'Сайт · ' + (dir || 'прочие страницы'), how: 'страница сайта без метки' };
+  if (!a) {
+    const n = String(x.sourceName || x.source || '').toLowerCase();
+    const ch = !n ? '(источник не указан)' : /wapi|whatsapp|wazzup|ватсап|вацап/.test(n) ? 'WhatsApp' : /звонок|call|телефон/.test(n) ? 'Звонок' : /почт|mail/.test(n) ? 'Email' : (x.sourceName || x.source);
+    a = { platform: 'Без метки', family: ch, how: 'только источник Битрикса' };
+  }
+  x.attr = a;
+  if (x.day < FIRST) return;
+  noUtm.total++;
+  noUtm.by[a.how] = (noUtm.by[a.how] || 0) + 1;
+  const sn = x.sourceName || x.source || '(пусто)';
+  noUtm.sources[sn] = (noUtm.sources[sn] || 0) + 1;
+  if (path) noUtm.pages[path] = (noUtm.pages[path] || 0) + 1;
+});
+
 const stagesLeads = {};
 const utmSources = {};
 const utmShare = {};
@@ -238,11 +292,17 @@ leads.forEach((x) => {
   const qual = st === QUAL;
   // ручные правки по конкретным сделкам: settings.json -> leadOverrides { "id сделки": { site, family, platform } }
   const ov = (settings.leadOverrides || {})[String(x.id)] || {};
-  const platform = ov.platform || x.platform || 'Без метки';
-  const camp = ov.family || (x.platform ? utmFamily(x.platform, x.utm.campaign) : NO_CAMPAIGN);
-  const campOut = ov.family || (platform === 'Без метки' ? NO_CAMPAIGN : camp);
-  x.family = camp;
-  x.site = ov.site || leadSite(x, x.platform);
+  const a = x.attr;
+  const platform = ov.platform || x.platform || (a && a.platform) || 'Без метки';
+  let camp;
+  if (x.platform) camp = utmFamily(x.platform, x.utm.campaign);
+  else if (a && a.utm) camp = utmFamily(a.platform, a.utm.campaign);
+  else if (a && a.family) camp = a.family;
+  else camp = NO_CAMPAIGN;
+  const campOut = ov.family || camp;
+  x.family = campOut;
+  x.eff = platform;
+  x.site = ov.site || (x.platform ? leadSite(x, x.platform) : a && a.utm ? leadSite({ ...x, utm: a.utm }, a.platform) : (a && a.site) || '');
   const b = bucket(x.day, platform, campOut, x.site);
   b.l += 1;
   if (clean) b.cn += 1;
@@ -261,7 +321,8 @@ leads.forEach((x) => {
 // ---------- оплаты из «Первичных продаж» ----------
 const byContact = new Map();
 leads.forEach((x) => {
-  if (!x.contact || !x.platform) return;
+  const ep = x.eff || x.platform;
+  if (!x.contact || !ep || ep === 'Без метки') return;
   if (!byContact.has(x.contact)) byContact.set(x.contact, []);
   byContact.get(x.contact).push(x);
 });
@@ -319,7 +380,7 @@ bxSales.rows.forEach((s) => {
   if (cands && cands.length) {
     const limit = plusOneDay(s.created);
     const first = cands.find((x) => x.day <= limit) || null;
-    if (first) { platform = first.platform; camp = first.family || utmFamily(first.platform, first.utm.campaign); site = first.site || ''; pay.viaContact++; }
+    if (first) { platform = first.eff || first.platform; camp = first.family || utmFamily(first.platform, first.utm.campaign); site = first.site || ''; pay.viaContact++; }
   }
   if (!platform) {
     const own = platformOf(s.utm.source, s.utm);
@@ -382,6 +443,7 @@ const output = {
     stagesSales,
     utmSources,
     unmatchedUtm: top(unmatchedUtm, 30),
+    noUtm: { total: noUtm.total, by: top(noUtm.by, 10), sources: top(noUtm.sources, 20), pages: top(noUtm.pages, 25) },
     unmatchedCabinet: top(unmatchedCabinet, 30),
     fetchedAt: { google: google.fetchedAt || null, meta: meta.fetchedAt || null, yandex: yandex.fetchedAt || null, bitrix: bxLeads.fetchedAt || null },
   },

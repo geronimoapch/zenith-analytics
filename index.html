@@ -328,6 +328,9 @@ function renderDiag(){
       <tr><td>Не определены (нет метки)</td><td>${p.unknown ?? 0}</td></tr></table></div>
     <div><b>Метки utm_campaign, которых нет в кабинете</b>${li(d.unmatchedUtm || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}
       <div class="dim" style="margin-top:6px">Если здесь много строк — добавь правило в config/campaign-map.json или поставь в рекламе id кампании в UTM.</div></div>
+    <div><b>Лиды без UTM: как найден источник (${(d.noUtm || {}).total ?? 0})</b>${li((d.noUtm || {}).by || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
+    <div><b>Лиды без UTM по источнику Битрикса</b>${li((d.noUtm || {}).sources || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
+    <div><b>Лиды без UTM по странице заявки</b>${li((d.noUtm || {}).pages || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
     <div><b>Кампании кабинета без своего «семейства»</b>${li(d.unmatchedCabinet || [], (x) => `<tr><td>${x.k}</td></tr>`)}</div>
     <div><b>Этапы воронки «Обработка заявок»</b><table>${stages(d.stagesLeads)}</table></div>
     <div><b>Этапы воронки «Первичные продажи»</b><table>${stages(d.stagesSales)}</table></div>

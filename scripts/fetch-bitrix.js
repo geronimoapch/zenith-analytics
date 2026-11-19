@@ -170,6 +170,8 @@ async function main() {
     stage: stageName(x.STAGE_ID),
     amount: Number(x.OPPORTUNITY || 0),
     contact: x.CONTACT_ID || null,
+    title: x.TITLE || '',
+    sdesc: x.SOURCE_DESCRIPTION || '',
     source: x.SOURCE_ID || '',
     sourceName: sources[x.SOURCE_ID] || x.SOURCE_ID || '',
     company: x.COMPANY_ID && x.COMPANY_ID !== '0' ? x.COMPANY_ID : null,
