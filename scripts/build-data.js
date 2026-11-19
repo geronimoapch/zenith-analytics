@@ -236,7 +236,6 @@ const DIRS = [
   [/lkm|lakokras|laki-kraski|лкм|лакокрас/, 'ЛКМ'],
 ];
 const dirOf = (t) => { const s = String(t || '').toLowerCase(); for (const [re, d] of DIRS) if (re.test(s)) return d; return ''; };
-const GOOGLE_LP = { 'Антикор': 'Антикор — Ленд', 'Гидроизоляция': 'Гидроизоляция — Сайт', 'Огнезащита': 'Огнез — Ленд', 'Растворители': 'Раствор — Ленд', 'ЛКМ': 'ЛКМ — Ленд', 'Напольные': 'Наполь — Ленд' };
 const pageOf = (x) => { const m = String(x.sdesc || '').match(/https?:\/\/[^\s,]+/); return m ? m[0] : ''; };
 const ctLeads = new Map();
 leads.forEach((x) => { if (x.contact && x.platform) { if (!ctLeads.has(x.contact)) ctLeads.set(x.contact, []); ctLeads.get(x.contact).push(x); } });
@@ -258,11 +257,8 @@ leads.forEach((x) => {
   let path = '';
   try { path = page ? new URL(page).pathname : ''; } catch (e) { path = ''; }
   const dir = dirOf(path) || dirOf(x.title);
-  if (!a && /^\/lp\//.test(path)) {
-    a = /-meta\/?$/.test(path) || /\/lp\/poly-meta/.test(path)
-      ? { platform: 'Meta', family: dir || '(лендинг без направления)', site: 'lp', how: 'страница: лендинг Meta' }
-      : { platform: 'Google', family: GOOGLE_LP[dir] || '(лендинг без направления)', site: 'lp', how: 'страница: лендинг Google' };
-  }
+  // страница даёт только направление: лендинги крутятся и в Meta, и в Google, платформу по ним не определяем
+  if (!a && /^\/lp\//.test(path)) a = { platform: 'Без метки', family: 'Лендинг · ' + (dir || 'без направления'), how: 'лендинг без метки' };
   if (!a && page) a = { platform: 'Без метки', family: 'Сайт · ' + (dir || 'прочие страницы'), how: 'страница сайта без метки' };
   if (!a) {
     const n = String(x.sourceName || x.source || '').toLowerCase();
