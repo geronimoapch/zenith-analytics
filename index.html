@@ -26,6 +26,11 @@
   .bar input[type=date]{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:5px 8px;border-radius:8px;font:inherit}
   .sep{width:1px;height:22px;background:var(--line);margin:0 4px}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+  .src{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:0 0 16px}
+  .srcc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .srcc h3{margin:0 0 8px;font-size:15px}
+  .srcc dl{display:grid;grid-template-columns:1fr auto;gap:3px 10px;margin:0;font-size:13px}
+  .srcc dt{color:var(--muted)} .srcc dd{margin:0;text-align:right;font-weight:600}
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
   .kpi .l{color:var(--muted);font-size:12px}
   .kpi .v{font-size:22px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
@@ -92,6 +97,7 @@
   </div>
 
   <div class="kpis" id="kpis"></div>
+  <div class="src" id="sources"></div>
   <div class="tablewrap"><table id="tbl"></table></div>
   <div class="note" id="notes"></div>
   <details id="daily"><summary>Разбивка по дням (общая, без разрезов по платформам)</summary><div class="tablewrap"><table id="dtbl"></table></div></details>
@@ -208,11 +214,27 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
   ];
   document.getElementById('kpis').innerHTML = k.map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
 
+  // сводка по источникам: Google / Meta / Органика / Прочее
+  const SRC = (p) => p === 'SEO' ? 'Органика' : (p === 'Google' || p === 'Meta' || p === 'Органика') ? p : 'Прочее';
+  const srcMap = aggregate(rows, (r) => SRC(r.p));
+  document.getElementById('sources').innerHTML = ['Google', 'Meta', 'Органика', 'Прочее'].map((g) => {
+    const a = srcMap.get(g) || ZERO();
+    const sub = g === 'Органика' ? 'SEO, ИИ-поиск, соцсети без рекламы' : g === 'Прочее' ? 'звонки и WhatsApp без меток, Satu, Яндекс' : 'реклама';
+    return `<div class="srcc"><h3>${g} <span class="dim" style="font-weight:400;font-size:12px">${sub}</span></h3><dl>`
+      + `<dt>Расход</dt><dd>${a.sp ? money(a.sp) : '—'}</dd>`
+      + `<dt>Лиды</dt><dd>${fmt(a.cn)}</dd>`
+      + `<dt>Квалы</dt><dd>${fmt(a.q)} <span class="dim">(${pct(a.q, a.cn)})</span></dd>`
+      + `<dt>Цена лида</dt><dd>${a.sp ? money(div(a.sp, a.cn)) : '—'}</dd>`
+      + `<dt>Цена квала</dt><dd>${a.sp ? money(div(a.sp, a.q)) : '—'}</dd>`
+      + `<dt>Оплаты</dt><dd>${fmt(a.pay)} · ${money(a.rev)}</dd></dl></div>`;
+  }).join('');
+
   // таблица
   const top = group === 'platform' ? (r) => r.p : (r) => r.d.slice(0, 7);
   const sub = group === 'platform' ? (r) => r.c : (r) => r.p;
   const topMap = aggregate(rows, top);
-  const order = [...topMap.entries()].sort((a, b) => group === 'month' ? (a[0] < b[0] ? 1 : -1) : (b[1].sp - a[1].sp) || (b[1].cn - a[1].cn));
+  const PRI = {Google: 0, Meta: 1, 'Органика': 2, SEO: 2};
+  const order = [...topMap.entries()].sort((a, b) => group === 'month' ? (a[0] < b[0] ? 1 : -1) : ((PRI[a[0]] ?? 9) - (PRI[b[0]] ?? 9)) || (b[1].sp - a[1].sp) || (b[1].cn - a[1].cn));
 
   let html = '<thead><tr>' + HEAD.map((h) => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
   order.forEach(([key, a]) => {
@@ -306,6 +328,9 @@ function renderDiag(){
       <tr><td>Не определены (нет метки)</td><td>${p.unknown ?? 0}</td></tr></table></div>
     <div><b>Метки utm_campaign, которых нет в кабинете</b>${li(d.unmatchedUtm || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}
       <div class="dim" style="margin-top:6px">Если здесь много строк — добавь правило в config/campaign-map.json или поставь в рекламе id кампании в UTM.</div></div>
+    <div><b>Лиды без UTM: как найден источник (${(d.noUtm || {}).total ?? 0})</b>${li((d.noUtm || {}).by || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
+    <div><b>Лиды без UTM по источнику Битрикса</b>${li((d.noUtm || {}).sources || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
+    <div><b>Лиды без UTM по странице заявки</b>${li((d.noUtm || {}).pages || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
     <div><b>Кампании кабинета без своего «семейства»</b>${li(d.unmatchedCabinet || [], (x) => `<tr><td>${x.k}</td></tr>`)}</div>
     <div><b>Этапы воронки «Обработка заявок»</b><table>${stages(d.stagesLeads)}</table></div>
     <div><b>Этапы воронки «Первичные продажи»</b><table>${stages(d.stagesSales)}</table></div>
