@@ -41,8 +41,12 @@ const month = (s) => day(s).slice(0, 7);
 function platformOf(utmSource, u) {
   const s = String(utmSource || '').trim().toLowerCase();
   if (!s) return null;
+  const med = String((u && u.medium) || '').trim().toLowerCase();
+  // органика: поиск без рекламы, ИИ-ассистенты, переходы из соцсетей без рекламы
+  if (med === 'organic' || med === 'ai-assistant' || med === 'social') return 'Органика';
+  if (/(chatgpt|gemini|perplexity|copilot|claude\.ai|deepseek)/.test(s)) return 'Органика';
   // google.com без medium/campaign/content — это органика (SEO), а не реклама
-  if (s === 'google.com' && u && !String(u.medium || '').trim() && !String(u.campaign || '').trim() && !String(u.content || '').trim()) return 'SEO';
+  if (s === 'google.com' && u && !med && !String(u.campaign || '').trim() && !String(u.content || '').trim()) return 'Органика';
   if (['meta', 'ig', 'fb', 'facebook', 'instagram', 'landing_meta'].includes(s)) return 'Meta';
   if (['google', 'google.com', 'landing_google'].includes(s)) return 'Google';
   if (['yandex', 'ya', 'yandex.kz', 'yandex.ru'].includes(s)) return 'Яндекс';
