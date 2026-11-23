@@ -61,6 +61,29 @@ async function getStages() {
 }
 
 // Справочник источников: SOURCE_ID -> название («Звонок», «Wapi …» и т.п.)
+// Справочник типов сделки: TYPE_ID -> название («Повторная сделка» и т.п.)
+async function getTypes() {
+  const map = {};
+  try {
+    const d = await call('crm.status.list', { filter: { ENTITY_ID: 'DEAL_TYPE' } });
+    (d.result || []).forEach((s) => { map[s.STATUS_ID] = s.NAME; });
+  } catch (e) { console.log('Битрикс: справочник типов сделки не получен: ' + e.message); }
+  return map;
+}
+
+// Другие карточки контактов с теми же телефонами (дубли клиента под разными id)
+async function findContactsByPhones(phones) {
+  const ids = new Set();
+  try {
+    for (let i = 0; i < phones.length; i += 20) {
+      const d = await call('crm.duplicate.findbycomm', { type: 'PHONE', values: phones.slice(i, i + 20).map((p) => '+' + p), entity_type: 'CONTACT' });
+      const r = d.result || {};
+      (r.CONTACT || []).forEach((x) => ids.add(String(x)));
+    }
+  } catch (e) { console.log('Битрикс: поиск дублей по телефону не удался: ' + e.message); }
+  return [...ids];
+}
+
 async function getSources() {
   const map = {};
   try {
@@ -78,7 +101,7 @@ async function getContacts(ids) {
       const batch = ids.slice(i, i + 50);
       const d = await call('crm.contact.list', {
         filter: { ID: batch },
-        select: ['ID', 'COMPANY_ID', 'SOURCE_ID', 'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM'],
+        select: ['ID', 'COMPANY_ID', 'PHONE', 'SOURCE_ID', 'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM'],
       });
       (d.result || []).forEach((x) => out.push(x));
     }
@@ -89,7 +112,7 @@ async function getContacts(ids) {
 // Вся история сделок указанных клиентов (контакт или компания): любые воронки и любые даты
 async function listHistory(field, ids) {
   const select = [
-    'ID', 'CATEGORY_ID', 'DATE_CREATE', 'CLOSEDATE', 'OPPORTUNITY', 'STAGE_ID', 'CONTACT_ID', 'COMPANY_ID', 'SOURCE_ID',
+    'ID', 'CATEGORY_ID', 'DATE_CREATE', 'CLOSEDATE', 'OPPORTUNITY', 'STAGE_ID', 'CONTACT_ID', 'COMPANY_ID', 'TYPE_ID', 'SOURCE_ID',
     'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM',
   ];
   const out = [];
@@ -110,7 +133,7 @@ async function listHistory(field, ids) {
 async function listDeals(categoryId, from) {
   const select = [
     'ID', 'TITLE', 'STAGE_ID', 'CATEGORY_ID', 'DATE_CREATE', 'DATE_MODIFY', 'CLOSEDATE', 'OPPORTUNITY',
-    'CONTACT_ID', 'COMPANY_ID', 'SOURCE_ID', 'SOURCE_DESCRIPTION',
+    'CONTACT_ID', 'COMPANY_ID', 'TYPE_ID', 'SOURCE_ID', 'SOURCE_DESCRIPTION',
     'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM',
   ];
   const out = [];
@@ -161,6 +184,7 @@ async function main() {
   const leads = await listDeals(leadCat.id, from);
   const sales = await listDeals(saleCat.id, from);
   const sources = await getSources();
+  const types = await getTypes();
   const stageName = (id) => stages[id] || id;
   const shape = (x) => ({
     id: x.ID,
@@ -174,6 +198,7 @@ async function main() {
     sdesc: x.SOURCE_DESCRIPTION || '',
     source: x.SOURCE_ID || '',
     sourceName: sources[x.SOURCE_ID] || x.SOURCE_ID || '',
+    type: types[x.TYPE_ID] || x.TYPE_ID || '',
     company: x.COMPANY_ID && x.COMPANY_ID !== '0' ? x.COMPANY_ID : null,
     utm: { source: x.UTM_SOURCE || '', medium: x.UTM_MEDIUM || '', campaign: x.UTM_CAMPAIGN || '', content: x.UTM_CONTENT || '', term: x.UTM_TERM || '' },
   });
@@ -182,26 +207,39 @@ async function main() {
   writeRaw('bitrix-sales.json', { fetchedAt: new Date().toISOString(), funnel: saleCat.name, rows: sales.map(shape) });
   const cids = [...new Set([...leads, ...sales].map((x) => x.CONTACT_ID).filter((x) => x && x !== '0'))];
   const contacts = await getContacts(cids);
-  writeRaw('bitrix-contacts.json', {
+  const writeContacts = () => writeRaw('bitrix-contacts.json', {
     fetchedAt: new Date().toISOString(),
     rows: contacts.map((x) => ({
       id: x.ID, company: x.COMPANY_ID && x.COMPANY_ID !== '0' ? x.COMPANY_ID : null,
       source: x.SOURCE_ID || '', sourceName: sources[x.SOURCE_ID] || x.SOURCE_ID || '',
+      phones: [...new Set((x.PHONE || []).map((p) => String(p.VALUE || '').replace(/\D/g, '').slice(-10)).filter((p) => p.length === 10))],
       utm: { source: x.UTM_SOURCE || '', medium: x.UTM_MEDIUM || '', campaign: x.UTM_CAMPAIGN || '', content: x.UTM_CONTENT || '', term: x.UTM_TERM || '' },
     })),
   });
+  writeContacts();
   console.log(`Битрикс: контактов ${contacts.length}`);
 
   // Недавно оплаченные сделки -> вся история их клиентов (контакты и компании)
   const PAIDNAME = String((settings.stages && settings.stages.paid) || 'ОПЛАТА ПОЛУЧЕНА').trim().toUpperCase();
-  const since = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+  const since = String(settings.firstDate || '2026-06-01');
   const recent = sales.filter((x) => String(stageName(x.STAGE_ID)).toUpperCase() === PAIDNAME && String(x.CLOSEDATE || x.DATE_MODIFY || '').slice(0, 10) >= since);
   const rc = [...new Set(recent.map((x) => x.CONTACT_ID).filter((x) => x && x !== '0'))];
+  // тот же клиент под другим id карточки: ищем контакты с такими же телефонами
+  const rcSet = new Set(rc);
+  const phones = [...new Set(contacts.filter((c) => rcSet.has(c.ID)).flatMap((c) => (c.PHONE || []).map((p) => String(p.VALUE || '').replace(/\D/g, '')).filter((p) => p.length >= 10)))];
+  const have = new Set(contacts.map((c) => String(c.ID)));
+  const dupIds = (await findContactsByPhones(phones)).filter((id) => !have.has(id));
+  const dupContacts = await getContacts(dupIds);
+  dupContacts.forEach((c) => contacts.push(c));
+  if (dupContacts.length) writeContacts();
+  console.log(`Битрикс: найдено дублей контактов по телефону: ${dupContacts.length} (телефонов проверено ${phones.length})`);
+  const rc2 = [...new Set([...rc, ...dupContacts.map((c) => String(c.ID))])];
+  const rc2Set = new Set(rc2);
   const rcomp = [...new Set([
     ...recent.map((x) => x.COMPANY_ID),
-    ...contacts.filter((c) => rc.includes(c.ID)).map((c) => c.COMPANY_ID),
+    ...contacts.filter((c) => rc2Set.has(String(c.ID))).map((c) => c.COMPANY_ID),
   ].filter((x) => x && x !== '0'))];
-  const hist = [...(await listHistory('CONTACT_ID', rc)), ...(await listHistory('COMPANY_ID', rcomp))];
+  const hist = [...(await listHistory('CONTACT_ID', rc2)), ...(await listHistory('COMPANY_ID', rcomp))];
   const seen = new Set();
   const histRows = hist.filter((x) => (seen.has(x.ID) ? false : seen.add(x.ID)));
   writeRaw('bitrix-history.json', {
@@ -209,7 +247,8 @@ async function main() {
     rows: histRows.map((x) => ({
       id: x.ID, category: x.CATEGORY_ID, created: x.DATE_CREATE, amount: Number(x.OPPORTUNITY || 0),
       contact: x.CONTACT_ID && x.CONTACT_ID !== '0' ? x.CONTACT_ID : null, company: x.COMPANY_ID && x.COMPANY_ID !== '0' ? x.COMPANY_ID : null,
-      source: x.SOURCE_ID || '', sourceName: sources[x.SOURCE_ID] || x.SOURCE_ID || '',
+      source: x.SOURCE_ID || '', sourceName: sources[x.SOURCE_ID] || x.SOURCE_ID || '', type: types[x.TYPE_ID] || x.TYPE_ID || '',
+      stage: stageName(x.STAGE_ID), closed: x.CLOSEDATE,
       utm: { source: x.UTM_SOURCE || '', medium: x.UTM_MEDIUM || '', campaign: x.UTM_CAMPAIGN || '', content: x.UTM_CONTENT || '', term: x.UTM_TERM || '' },
     })),
   });
