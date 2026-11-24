@@ -97,7 +97,6 @@
   </div>
 
   <div class="kpis" id="kpis"></div>
-  <div class="src" id="sources"></div>
   <div class="tablewrap"><table id="tbl"></table></div>
   <div class="note" id="notes"></div>
   <details id="daily"><summary>Разбивка по дням (общая, без разрезов по платформам)</summary><div class="tablewrap"><table id="dtbl"></table></div></details>
@@ -214,33 +213,18 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
   ];
   document.getElementById('kpis').innerHTML = k.map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
 
-  // сводка по источникам: Google / Meta / Органика / Прочее
-  const SRC = (p) => p === 'SEO' ? 'Органика' : (p === 'Google' || p === 'Meta' || p === 'Органика') ? p : 'Прочее';
-  const srcMap = aggregate(rows, (r) => SRC(r.p));
-  document.getElementById('sources').innerHTML = ['Google', 'Meta', 'Органика', 'Прочее'].map((g) => {
-    const a = srcMap.get(g) || ZERO();
-    const sub = g === 'Органика' ? 'SEO, ИИ-поиск, соцсети без рекламы' : g === 'Прочее' ? 'звонки и WhatsApp без меток, Satu, Яндекс' : 'реклама';
-    return `<div class="srcc"><h3>${g} <span class="dim" style="font-weight:400;font-size:12px">${sub}</span></h3><dl>`
-      + `<dt>Расход</dt><dd>${a.sp ? money(a.sp) : '—'}</dd>`
-      + `<dt>Лиды</dt><dd>${fmt(a.cn)}</dd>`
-      + `<dt>Квалы</dt><dd>${fmt(a.q)} <span class="dim">(${pct(a.q, a.cn)})</span></dd>`
-      + `<dt>Цена лида</dt><dd>${a.sp ? money(div(a.sp, a.cn)) : '—'}</dd>`
-      + `<dt>Цена квала</dt><dd>${a.sp ? money(div(a.sp, a.q)) : '—'}</dd>`
-      + `<dt>Оплаты</dt><dd>${fmt(a.pay)} · ${money(a.rev)}</dd></dl></div>`;
-  }).join('');
-
   // таблица
   const top = group === 'platform' ? (r) => r.p : (r) => r.d.slice(0, 7);
   const sub = group === 'platform' ? (r) => r.c : (r) => r.p;
   const topMap = aggregate(rows, top);
-  const PRI = {Google: 0, Meta: 1, 'Органика': 2, SEO: 2};
+  const PRI = {Google: 0, Meta: 1, SEO: 2, Satu: 3, 'Яндекс': 4, 'Повторные клиенты': 5, 'Не определено': 6};
   const order = [...topMap.entries()].sort((a, b) => group === 'month' ? (a[0] < b[0] ? 1 : -1) : ((PRI[a[0]] ?? 9) - (PRI[b[0]] ?? 9)) || (b[1].sp - a[1].sp) || (b[1].cn - a[1].cn));
 
   let html = '<thead><tr>' + HEAD.map((h) => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
   order.forEach(([key, a]) => {
     const id = group + '|' + key;
     const isOpen = open.has(id);
-    const label = group === 'month' ? monthLabel(key) : (key === 'Без метки' ? 'Без метки / повторные клиенты' : key);
+    const label = group === 'month' ? monthLabel(key) : key;
     html += `<tr class="p ${isOpen ? 'open' : ''}" data-id="${id}"><td><span class="arrow">▸</span>${label}</td>${cells(a, qkey(key, null))}</tr>`;
     if (qopen.has(qkey(key, null))) html += qlist(key, null, top, sub);
     if (qopen.has('p' + qkey(key, null))) html += qlist(key, null, top, sub, 'pays');
@@ -308,7 +292,7 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
 
   document.getElementById('notes').innerHTML =
     'Лид — сделка в «Обработке заявок» без этапов СПАМ и ДУБЛЬ. Квал — этап «КВАЛИФИКАЦИЯ ПРОЙДЕНА». Лиды и квалы стоят на дате создания лида, оплаты и выручка — на дате оплаты. ' +
-    'Строка «Без метки» — звонки и часть WhatsApp, у них нет UTM, расход на них не делится. Цена квала в итоге считается на ВСЕ квалы, включая без метки, поэтому по каналам она честнее.';
+    'Платформы: Google, Meta, SEO (350 000 ₸ в месяц, общим расходом), Satu, Яндекс. Если у заявки или оплаты нет метки, ищем историю клиента по контакту, телефону и компании. Нашли раннюю метку — относим туда. Клиент уже покупал — «Повторные клиенты». Иначе «Не определено». Расход на два последних не делится. Цена квала в итоге считается на ВСЕ квалы, поэтому по каналам она честнее.';
   if (site !== 'all') document.getElementById('notes').innerHTML += '<br>Фильтр по сайту: в zenith-i попадают кампании со словом «сайт» и метки с «site», в LP — «лендинг», land, lp, в zenith-invest — «инвест» и invest. Всё, где в названии кампании или в UTM нет таких слов (Яндекс, Satu, звонки, WhatsApp, часть кампаний), лежит в «Прочее».';
   renderDiag();
 }
