@@ -299,8 +299,9 @@ const pageSiteOf = (x) => {
   let u;
   try { u = new URL(p); } catch (e) { return ''; }
   const h = u.hostname.toLowerCase();
-  if (/^\/lp\//.test(u.pathname)) return 'lp';
+  if (/^lp\./.test(h)) return 'lp'; // лендинги живут на lp.zenith-i.kz
   if (/(^|\.)zenith-invest\.kz$/.test(h)) return 'invest';
+  if (/^\/lp\//.test(u.pathname)) return 'lp';
   if (/(^|\.)zenith-i\.kz$/.test(h)) return 'site';
   return '';
 };
