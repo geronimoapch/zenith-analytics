@@ -90,5 +90,13 @@
       "site": "lp",
       "family": "ЛКМ"
     }
+  },
+  "debugDeals": [
+    16790,
+    16880,
+    16896
+  ],
+  "recurringSpendKzt": {
+    "SEO": 350000
   }
 }
