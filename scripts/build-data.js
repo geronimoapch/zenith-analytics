@@ -43,10 +43,10 @@ function platformOf(utmSource, u) {
   if (!s) return null;
   const med = String((u && u.medium) || '').trim().toLowerCase();
   // органика: поиск без рекламы, ИИ-ассистенты, переходы из соцсетей без рекламы
-  if (med === 'organic' || med === 'ai-assistant' || med === 'social') return 'Органика';
-  if (/(chatgpt|gemini|perplexity|copilot|claude\.ai|deepseek)/.test(s)) return 'Органика';
+  if (med === 'organic' || med === 'ai-assistant' || med === 'social') return 'SEO';
+  if (/(chatgpt|gemini|perplexity|copilot|claude\.ai|deepseek)/.test(s)) return 'SEO';
   // google.com без medium/campaign/content — это органика (SEO), а не реклама
-  if (s === 'google.com' && u && !med && !String(u.campaign || '').trim() && !String(u.content || '').trim()) return 'Органика';
+  if (s === 'google.com' && u && !med && !String(u.campaign || '').trim() && !String(u.content || '').trim()) return 'SEO';
   if (['meta', 'ig', 'fb', 'facebook', 'instagram', 'landing_meta'].includes(s)) return 'Meta';
   if (['google', 'google.com', 'landing_google'].includes(s)) return 'Google';
   if (['yandex', 'ya', 'yandex.kz', 'yandex.ru'].includes(s)) return 'Яндекс';
@@ -55,11 +55,13 @@ function platformOf(utmSource, u) {
   if (/(^|[^a-z])(meta|facebook|instagram|fb|ig)([^a-z]|$)/.test(s)) return 'Meta';
   if (/yandex|(^|[^a-z])ya([^a-z]|$)/.test(s)) return 'Яндекс';
   if (s.includes('satu')) return 'Satu';
-  if (s.includes('zenith-i')) return 'Сайт (прямой)';
-  return 'Другое';
+  // прямые заходы, звонки с сайта, landing и прочее — это не канал, платформу не определяем
+  return null;
 }
 const HAS_API = new Set(['Google', 'Meta']);
 const NO_CAMPAIGN = '(всё вместе)';
+const UNDEF = 'Не определено', REPEAT = 'Повторные клиенты';
+const REAL = new Set(['Google', 'Meta', 'Яндекс', 'Satu', 'SEO']);
 
 // ---------- семейства кампаний ----------
 function matchFamily(platformKey, text) {
@@ -202,7 +204,17 @@ const noSite = {};
 
 // ---------- ручной расход (Satu, Яндекс и др.) ----------
 const today = new Date().toISOString().slice(0, 10);
-Object.entries(settings.manualSpendKzt || {}).forEach(([platform, byMonth]) => {
+const manualAll = JSON.parse(JSON.stringify(settings.manualSpendKzt || {}));
+Object.entries(settings.recurringSpendKzt || {}).forEach(([p, amt]) => {
+  manualAll[p] = manualAll[p] || {};
+  const [fy, fm] = FIRST.slice(0, 7).split('-').map(Number);
+  const [ty, tm] = today.slice(0, 7).split('-').map(Number);
+  for (let y = fy, m = fm; y < ty || (y === ty && m <= tm); m === 12 ? (y++, m = 1) : m++) {
+    const ym = y + '-' + String(m).padStart(2, '0');
+    if (manualAll[p][ym] === undefined) manualAll[p][ym] = amt;
+  }
+});
+Object.entries(manualAll).forEach(([platform, byMonth]) => {
   Object.entries(byMonth).forEach(([ym, total]) => {
     if (platform === 'Яндекс' && yandexMonths.has(ym)) return;
     const [y, m] = ym.split('-').map(Number);
@@ -225,11 +237,54 @@ const leads = bxLeads.rows.map((x) => ({
   platform: platformOf(x.utm.source, x.utm),
 }));
 
-// ---------- лиды без UTM: ищем источник по иерархии ----------
-// 1) у этого же контакта есть другая сделка/карточка контакта с UTM -> берём её
-// 2) страница заявки из SOURCE_DESCRIPTION: /lp/*-meta/ -> Meta, другие /lp/ -> Google (лендинги только под рекламу)
-// 3) обычная страница сайта -> «Без метки», но с направлением по странице
-// 4) остальное -> «Без метки» с разбивкой по источнику Битрикса (звонок, WhatsApp и т.д.)
+// ---------- клиент: ищем историю по контакту, телефону и компании ----------
+// Ключи клиента: c<контакт>, p<телефон>, k<компания>. Контакт «0» (не указан) — не клиент, его игнорируем.
+const okId = (v) => (v && String(v) !== '0' ? String(v) : null);
+const ctCard = new Map(bxContacts.rows.map((c) => [String(c.id), c]));
+const keysOf = (e) => {
+  const ks = [];
+  const cid = okId(e.contact);
+  if (cid) { ks.push('c' + cid); const c = ctCard.get(cid); if (c) { (c.phones || []).forEach((p) => ks.push('p' + p)); if (c.company) ks.push('k' + c.company); } }
+  const co = okId(e.company); if (co) ks.push('k' + co);
+  return [...new Set(ks)];
+};
+const clientIdx = new Map();
+const seenIds = new Set();
+[...leads.map((e) => [e, 'лид']), ...bxSales.rows.map((e) => [e, 'продажа']), ...bxHistory.rows.map((e) => [e, 'история'])].forEach(([e, kind]) => {
+  const id = String(e.id); if (seenIds.has(id)) return; seenIds.add(id);
+  const it = { id, created: e.created, own: platformOf(e.utm.source, e.utm), utm: e.utm, kind, ref: e, paid: kind === 'продажа' && up(e.stage) === PAID };
+  keysOf(e).forEach((k) => { if (!clientIdx.has(k)) clientIdx.set(k, []); clientIdx.get(k).push(it); });
+});
+// другие заявки и сделки этого же клиента
+const itemsOf = (e) => {
+  const m = new Map();
+  keysOf(e).forEach((k) => (clientIdx.get(k) || []).forEach((it) => m.set(it.id, it)));
+  return [...m.values()].filter((it) => it.id !== String(e.id));
+};
+// повторный клиент: тип сделки «повторная», источник «существующий клиент» или у него уже была оплаченная сделка
+const isRepeat = (e) => {
+  if (/повтор/i.test(e.type || '')) return true;
+  if (/существующ|повторн/i.test(e.sourceName || '')) return true;
+  const c = ctCard.get(okId(e.contact) || '');
+  if (c && /существующ|повторн/i.test(c.sourceName || '')) return true;
+  const eDay = day(e.created);
+  return itemsOf(e).some((it) => it.paid && day(it.ref.closed || it.ref.modified) < eDay);
+};
+const channelOf = (name) => {
+  const n = String(name || '').toLowerCase();
+  if (!n) return 'Источник не указан';
+  if (/wapi|whatsapp|wazzup|ватсап|вацап/.test(n)) return 'WhatsApp';
+  if (/звонок|call|телефон/.test(n)) return 'Звонок';
+  if (/почт|mail/.test(n)) return 'Email';
+  return name;
+};
+
+// ---------- лиды без UTM: определяем платформу по порядку ----------
+// 1) у этого клиента РАНЬШЕ была заявка/сделка с понятной меткой -> берём её (контакт, телефон, компания)
+// 2) UTM в карточке контакта
+// 3) источник Битрикса «Satu» -> Satu
+// 4) клиент уже покупал (повторная сделка) -> «Повторные клиенты»
+// 5) остальное -> «Не определено» (страница заявки или источник Битрикса дают только подпись внутри)
 const DIRS = [
   [/antikor|антикор/, 'Антикор'], [/gidroiz|гидроиз/, 'Гидроизоляция'], [/ognez|огнез/, 'Огнезащита'],
   [/rastvor|раствор/, 'Растворители'], [/poly|napoln|polimern|nalivn|наполь|пол(ы|ов)/, 'Напольные'],
@@ -237,34 +292,26 @@ const DIRS = [
 ];
 const dirOf = (t) => { const s = String(t || '').toLowerCase(); for (const [re, d] of DIRS) if (re.test(s)) return d; return ''; };
 const pageOf = (x) => { const m = String(x.sdesc || '').match(/https?:\/\/[^\s,]+/); return m ? m[0] : ''; };
-const ctLeads = new Map();
-leads.forEach((x) => { if (x.contact && x.platform) { if (!ctLeads.has(x.contact)) ctLeads.set(x.contact, []); ctLeads.get(x.contact).push(x); } });
-const ctCard = new Map(bxContacts.rows.map((c) => [String(c.id), c]));
 const noUtm = { total: 0, by: {}, sources: {}, pages: {} };
 leads.forEach((x) => {
   if (x.platform) return;
   let a = null;
-  const other = (ctLeads.get(x.contact) || []).filter((y) => y.id !== x.id);
-  if (other.length) {
-    const prev = other.filter((y) => y.created <= x.created).sort((p, q) => (p.created < q.created ? 1 : -1))[0] || other[0];
-    a = { platform: prev.platform, utm: prev.utm, how: 'контакт: другая сделка с UTM' };
-  } else {
-    const c = x.contact && ctCard.get(String(x.contact));
+  const prior = itemsOf(x).filter((it) => it.own && REAL.has(it.own) && it.created <= x.created).sort((p, q) => (p.created < q.created ? 1 : -1))[0];
+  if (prior) a = { platform: prior.own, utm: prior.utm, how: 'клиент: ранее была метка' };
+  if (!a) {
+    const c = ctCard.get(okId(x.contact) || '');
     const cp = c && platformOf(c.utm.source, c.utm);
-    if (cp) a = { platform: cp, utm: c.utm, how: 'контакт: UTM в карточке' };
+    if (cp && REAL.has(cp)) a = { platform: cp, utm: c.utm, how: 'контакт: UTM в карточке' };
   }
   const page = pageOf(x);
   let path = '';
   try { path = page ? new URL(page).pathname : ''; } catch (e) { path = ''; }
   const dir = dirOf(path) || dirOf(x.title);
-  // страница даёт только направление: лендинги крутятся и в Meta, и в Google, платформу по ним не определяем
-  if (!a && /^\/lp\//.test(path)) a = { platform: 'Без метки', family: 'Лендинг · ' + (dir || 'без направления'), how: 'лендинг без метки' };
-  if (!a && page) a = { platform: 'Без метки', family: 'Сайт · ' + (dir || 'прочие страницы'), how: 'страница сайта без метки' };
-  if (!a) {
-    const n = String(x.sourceName || x.source || '').toLowerCase();
-    const ch = !n ? '(источник не указан)' : /wapi|whatsapp|wazzup|ватсап|вацап/.test(n) ? 'WhatsApp' : /звонок|call|телефон/.test(n) ? 'Звонок' : /почт|mail/.test(n) ? 'Email' : (x.sourceName || x.source);
-    a = { platform: 'Без метки', family: ch, how: 'только источник Битрикса' };
-  }
+  if (!a && /satu/i.test(String(x.sourceName || ''))) a = { platform: 'Satu', how: 'источник Битрикса: Satu' };
+  if (!a && isRepeat(x)) a = { platform: REPEAT, family: channelOf(x.sourceName || x.source), how: 'повторный клиент' };
+  if (!a && /^\/lp\//.test(path)) a = { platform: UNDEF, family: 'Лендинг · ' + (dir || 'без направления'), how: 'лендинг без метки' };
+  if (!a && page) a = { platform: UNDEF, family: 'Сайт · ' + (dir || 'прочие страницы'), how: 'страница сайта без метки' };
+  if (!a) a = { platform: UNDEF, family: channelOf(x.sourceName || x.source), how: 'только источник Битрикса' };
   x.attr = a;
   if (x.day < FIRST) return;
   noUtm.total++;
@@ -289,7 +336,7 @@ leads.forEach((x) => {
   // ручные правки по конкретным сделкам: settings.json -> leadOverrides { "id сделки": { site, family, platform } }
   const ov = (settings.leadOverrides || {})[String(x.id)] || {};
   const a = x.attr;
-  const platform = ov.platform || x.platform || (a && a.platform) || 'Без метки';
+  const platform = ov.platform || x.platform || (a && a.platform) || UNDEF;
   let camp;
   if (x.platform) camp = utmFamily(x.platform, x.utm.campaign);
   else if (a && a.utm) camp = utmFamily(a.platform, a.utm.campaign);
@@ -310,7 +357,7 @@ leads.forEach((x) => {
   utmShare[m] = utmShare[m] || { leads: 0, withUtm: 0 };
   utmShare[m].leads++; if (x.platform) utmShare[m].withUtm++;
   const sk = (x.utm.source || '(пусто)').toLowerCase();
-  utmSources[sk] = utmSources[sk] || { n: 0, platform: x.platform || 'Без метки' };
+  utmSources[sk] = utmSources[sk] || { n: 0, platform: x.platform || UNDEF };
   utmSources[sk].n++;
 });
 
@@ -318,7 +365,7 @@ leads.forEach((x) => {
 const byContact = new Map();
 leads.forEach((x) => {
   const ep = x.eff || x.platform;
-  if (!x.contact || !ep || ep === 'Без метки') return;
+  if (!x.contact || !ep || !REAL.has(ep)) return;
   if (!byContact.has(x.contact)) byContact.set(x.contact, []);
   byContact.get(x.contact).push(x);
 });
@@ -333,32 +380,9 @@ const plusOneDay = (iso) => {
 const stagesSales = {};
 const payList = [];
 const unknownPays = [];
-// История клиента: все его заявки и сделки с понятной меткой (по контакту и по компании)
-const contactById = new Map(bxContacts.rows.map((c) => [String(c.id), c]));
-const histByContact = new Map(), histByCompany = new Map();
-const addHist = (map, k, h) => { if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(h); };
-const companyOfContact = (cid) => { const c = contactById.get(String(cid)); return c && c.company; };
-const pushHist = (r, kind) => {
-  const p = r.platform !== undefined ? r.platform : platformOf(r.utm.source, r.utm);
-  if (!p) return;
-  const h = { id: r.id, kind, created: r.created, platform: p, camp: r.family || utmFamily(p, r.utm.campaign), site: r.site !== undefined ? r.site : leadSite(r, p) };
-  const comp = r.company || companyOfContact(r.contact);
-  addHist(histByContact, r.contact && String(r.contact), h);
-  addHist(histByCompany, comp && String(comp), h);
-};
-leads.forEach((x) => pushHist(x, 'лид'));
-bxSales.rows.forEach((x) => pushHist(x, 'сделка'));
-bxHistory.rows.forEach((x) => pushHist(x, 'сделка (история)'));
+const contactById = ctCard;
 const histSrc = new Map();
 bxHistory.rows.forEach((x) => { if (x.contact && x.sourceName && !histSrc.has(String(x.contact))) histSrc.set(String(x.contact), x.sourceName); });
-const channelOf = (name) => {
-  const n = String(name || '').toLowerCase();
-  if (!n) return 'Источник не указан';
-  if (/wapi|whatsapp|ватсап|вацап/.test(n)) return 'WhatsApp';
-  if (/звонок|call|телефон/.test(n)) return 'Звонок';
-  if (/почт|mail/.test(n)) return 'Email';
-  return name;
-};
 const allByContact = new Map();
 leads.forEach((x) => { if (!x.contact) return; if (!allByContact.has(x.contact)) allByContact.set(x.contact, []); allByContact.get(x.contact).push(x); });
 const pay = { total: 0, viaContact: 0, viaOwnUtm: 0, viaHistory: 0, viaContactUtm: 0, unknown: 0, noContact: 0 };
@@ -383,28 +407,30 @@ bxSales.rows.forEach((s) => {
     if (own) { platform = own; camp = utmFamily(own, s.utm.campaign); site = leadSite(s, own); pay.viaOwnUtm++; }
   }
   if (!platform) {
-    // повторный клиент: ищем первую понятную метку у любой его заявки или сделки (контакт, затем компания)
-    const comp = s.company || companyOfContact(s.contact);
-    const pool = [...(histByContact.get(String(s.contact)) || []), ...(comp ? histByCompany.get(String(comp)) || [] : [])]
-      .filter((h) => h.id !== s.id && day(h.created) <= payDay)
-      .sort((a, b) => (a.created < b.created ? -1 : 1));
-    if (pool.length) { const h = pool[0]; platform = h.platform; camp = h.camp; site = h.site || ''; pay.viaHistory++; }
+    // у клиента (контакт, телефон, компания) раньше была заявка или сделка с понятной меткой -> первая из них
+    const pool = itemsOf(s).filter((it) => it.own && REAL.has(it.own) && day(it.created) <= payDay).sort((a, b) => (a.created < b.created ? -1 : 1));
+    if (pool.length) {
+      const h = pool[0];
+      platform = h.own; camp = h.ref.family || utmFamily(h.own, h.utm.campaign);
+      site = h.ref.site !== undefined ? h.ref.site : leadSite(h.ref, h.own); pay.viaHistory++;
+    }
   }
   if (!platform) {
     // собственные UTM в карточке контакта
-    const c = contactById.get(String(s.contact));
+    const c = contactById.get(okId(s.contact) || '');
     const cp = c && platformOf(c.utm.source, c.utm);
-    if (cp) { platform = cp; camp = utmFamily(cp, c.utm.campaign); site = leadSite(c, cp); pay.viaContactUtm++; }
+    if (cp && REAL.has(cp)) { platform = cp; camp = utmFamily(cp, c.utm.campaign); site = leadSite(c, cp); pay.viaContactUtm++; }
   }
+  if (!platform && /satu/i.test(String(s.sourceName || ''))) platform = 'Satu';
   if (!platform) {
-    // метки нигде нет: показываем хотя бы канал (источник сделки, заявки или контакта)
-    const c = contactById.get(String(s.contact));
+    // метки нигде нет: повторный клиент или не определено; внутри показываем канал (источник сделки, заявки или контакта)
+    const c = contactById.get(okId(s.contact) || '');
     const ls = allByContact.get(s.contact) || [];
     const srcName = s.sourceName || (ls.find((x) => x.sourceName) || {}).sourceName || (c && c.sourceName) || histSrc.get(String(s.contact)) || '';
-    platform = 'Без метки'; camp = channelOf(srcName); pay.unknown++;
-    if (payDay >= '2026-10-15') unknownPays.push({ id: s.id, created: s.created, paid: payDay, amount: Math.round(s.amount), contact: s.contact, utm: s.utm, leadsOfContact: (allByContact.get(s.contact) || []).map((x) => ({ id: x.id, created: x.created, stage: x.stage, utm: x.utm })) });
+    platform = isRepeat(s) ? REPEAT : UNDEF; camp = channelOf(srcName); pay.unknown++;
+    if (payDay >= '2026-10-15') unknownPays.push({ id: s.id, created: s.created, paid: payDay, amount: Math.round(s.amount), platform, contact: s.contact, utm: s.utm });
   }
-  if (platform !== 'Без метки' && !HAS_API.has(platform)) camp = NO_CAMPAIGN;
+  if (REAL.has(platform) && !HAS_API.has(platform)) camp = NO_CAMPAIGN;
 
   const b = bucket(payDay, platform, camp, site);
   b.pay += 1; b.rev += s.amount;
@@ -430,7 +456,7 @@ const debug = (settings.debugDeals || []).map(String).map((id) => {
     platformOwn: x ? x.platform : platformOf(e.utm.source, e.utm), attr: x && x.attr ? { platform: x.attr.platform, how: x.attr.how } : null, eff: x ? x.eff : null,
     contact: cid, company: e.company,
     sameContact: (allByContact.get(cid) || []).filter((y) => String(y.id) !== id).map((y) => ({ id: y.id, created: y.created, stage: y.stage, utm: y.utm, platform: y.platform })),
-    hist: (histByContact.get(String(cid)) || []).map((h) => ({ id: h.id, platform: h.platform, created: h.created })),
+    hist: itemsOf(e).map((h) => ({ id: h.id, own: h.own, created: h.created, kind: h.kind })),
   };
 });
 
