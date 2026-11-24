@@ -193,7 +193,7 @@ async function main() {
     closed: x.CLOSEDATE,
     stage: stageName(x.STAGE_ID),
     amount: Number(x.OPPORTUNITY || 0),
-    contact: x.CONTACT_ID || null,
+    contact: x.CONTACT_ID && x.CONTACT_ID !== '0' ? x.CONTACT_ID : null,
     title: x.TITLE || '',
     sdesc: x.SOURCE_DESCRIPTION || '',
     source: x.SOURCE_ID || '',
