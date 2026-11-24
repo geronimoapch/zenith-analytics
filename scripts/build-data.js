@@ -419,6 +419,21 @@ const outRows = [...rows.values()]
 
 const top = (obj, n) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ k, n: v }));
 
+const debug = (settings.debugDeals || []).map(String).map((id) => {
+  const x = leads.find((l) => String(l.id) === id);
+  const s = bxSales.rows.find((r) => String(r.id) === id);
+  const e = x || s;
+  if (!e) return { id, found: false };
+  const cid = e.contact;
+  return {
+    id, kind: x ? 'лид' : 'продажа', stage: e.stage, created: e.created, utm: e.utm, source: e.sourceName, sdesc: e.sdesc || '',
+    platformOwn: x ? x.platform : platformOf(e.utm.source, e.utm), attr: x && x.attr ? { platform: x.attr.platform, how: x.attr.how } : null, eff: x ? x.eff : null,
+    contact: cid, company: e.company,
+    sameContact: (allByContact.get(cid) || []).filter((y) => String(y.id) !== id).map((y) => ({ id: y.id, created: y.created, stage: y.stage, utm: y.utm, platform: y.platform })),
+    hist: (histByContact.get(String(cid)) || []).map((h) => ({ id: h.id, platform: h.platform, created: h.created })),
+  };
+});
+
 const output = {
   generatedAt: new Date().toISOString(),
   firstDate: FIRST,
@@ -430,6 +445,7 @@ const output = {
   quals: qualList.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : Number(b.id) - Number(a.id))),
   diagnostics: {
     googleStale,
+    debug,
     unknownPays,
     noSiteCampaigns: Object.entries(noSite).map(([k, v]) => ({ k, sp: Math.round(v) })).sort((a, b) => b.sp - a.sp).slice(0, 40),
     leads: { total: leadsCounted, withUtm: leadsWithUtm, clean: cleanTotal, qualified: qualTotal },
