@@ -292,6 +292,19 @@ const DIRS = [
 ];
 const dirOf = (t) => { const s = String(t || '').toLowerCase(); for (const [re, d] of DIRS) if (re.test(s)) return d; return ''; };
 const pageOf = (x) => { const m = String(x.sdesc || '').match(/https?:\/\/[^\s,]+/); return m ? m[0] : ''; };
+// страница заявки — самый надёжный признак, на какой площадке человек оставил заявку
+const pageSiteOf = (x) => {
+  const p = pageOf(x);
+  if (!p) return '';
+  let u;
+  try { u = new URL(p); } catch (e) { return ''; }
+  const h = u.hostname.toLowerCase();
+  if (/^\/lp\//.test(u.pathname)) return 'lp';
+  if (/(^|\.)zenith-invest\.kz$/.test(h)) return 'invest';
+  if (/(^|\.)zenith-i\.kz$/.test(h)) return 'site';
+  return '';
+};
+const pageFixes = [];
 const noUtm = { total: 0, by: {}, sources: {}, pages: {} };
 leads.forEach((x) => {
   if (x.platform) return;
@@ -342,10 +355,24 @@ leads.forEach((x) => {
   else if (a && a.utm) camp = utmFamily(a.platform, a.utm.campaign);
   else if (a && a.family) camp = a.family;
   else camp = NO_CAMPAIGN;
-  const campOut = ov.family || camp;
-  x.family = campOut;
+  let campOut = ov.family || camp;
   x.eff = platform;
   x.site = ov.site || (x.platform ? leadSite(x, x.platform) : a && a.utm ? leadSite({ ...x, utm: a.utm }, a.platform) : (a && a.site) || '');
+  // сверяем с реальной страницей заявки: «Ленд» только если заявка с /lp/, иначе «Сайт»; площадка — по домену
+  if (x.platform && (platform === 'Google' || platform === 'Meta')) {
+    const ps = pageSiteOf(x);
+    if (ps) {
+      const was = [campOut, x.site];
+      if (!ov.site) x.site = ps;
+      if (!ov.family) {
+        const m = /^(.+) — (Ленд|Сайт)$/.exec(campOut);
+        const want = ps === 'lp' ? 'Ленд' : 'Сайт';
+        if (m && m[2] !== want) campOut = m[1] + ' — ' + want;
+      }
+      if (was[0] !== campOut || was[1] !== x.site) pageFixes.push({ id: x.id, p: platform, from: was.join(' | '), to: campOut + ' | ' + x.site, page: pageOf(x) });
+    }
+  }
+  x.family = campOut;
   const b = bucket(x.day, platform, campOut, x.site);
   b.l += 1;
   if (clean) b.cn += 1;
@@ -481,6 +508,7 @@ const output = {
     stagesSales,
     utmSources,
     unmatchedUtm: top(unmatchedUtm, 30),
+    pageFixes,
     noUtm: { total: noUtm.total, by: top(noUtm.by, 10), sources: top(noUtm.sources, 20), pages: top(noUtm.pages, 25) },
     unmatchedCabinet: top(unmatchedCabinet, 30),
     fetchedAt: { google: google.fetchedAt || null, meta: meta.fetchedAt || null, yandex: yandex.fetchedAt || null, bitrix: bxLeads.fetchedAt || null },
