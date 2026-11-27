@@ -42,6 +42,8 @@ function platformOf(utmSource, u) {
   const s = String(utmSource || '').trim().toLowerCase();
   if (!s) return null;
   const med = String((u && u.medium) || '').trim().toLowerCase();
+  // реклама в ChatGPT — отдельная платформа, не SEO
+  if (/chatgpt_ads|openai_ads/.test(s) || (/chatgpt|openai/.test(s) && /cpc|paid|ads/.test(med))) return 'ChatGPT';
   // органика: поиск без рекламы, ИИ-ассистенты, переходы из соцсетей без рекламы
   if (med === 'organic' || med === 'ai-assistant' || med === 'social') return 'SEO';
   if (/(chatgpt|gemini|perplexity|copilot|claude\.ai|deepseek)/.test(s)) return 'SEO';
@@ -61,7 +63,7 @@ function platformOf(utmSource, u) {
 const HAS_API = new Set(['Google', 'Meta']);
 const NO_CAMPAIGN = '(всё вместе)';
 const UNDEF = 'Не определено', REPEAT = 'Повторные клиенты';
-const REAL = new Set(['Google', 'Meta', 'Яндекс', 'Satu', 'SEO']);
+const REAL = new Set(['Google', 'Meta', 'Яндекс', 'Satu', 'SEO', 'ChatGPT']);
 
 // ---------- семейства кампаний ----------
 function matchFamily(platformKey, text) {
