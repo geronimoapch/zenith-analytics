@@ -74,7 +74,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Zenith: цена лида и квала по каналам и кампаниям</h1>
+  <h1>Zenith: сквозная аналитика — цена лида и квала по источникам</h1>
   <div class="sub" id="updated">Загружаю данные…</div>
 
   <div class="bar" id="presets"></div>
@@ -83,17 +83,30 @@
     <input type="date" id="from"> <span class="dim">—</span> <input type="date" id="to">
     <span class="sep"></span>
     <span class="dim">Строки:</span>
-    <button class="chip on" data-group="platform">по каналам</button>
+    <button class="chip on" data-group="platform">по источникам</button>
+    <button class="chip" data-group="dir">по направлениям</button>
     <button class="chip" data-group="month">по месяцам</button>
     <span class="sep"></span>
     <span class="dim">Сайт:</span>
     <button class="chip on" data-site="all">все</button>
-    <button class="chip" data-site="site">zenith-i</button>
-    <button class="chip" data-site="lp">LP</button>
     <button class="chip" data-site="invest">zenith-invest</button>
-    <button class="chip" data-site="other">Прочее</button>
+    <button class="chip" data-site="site">zenith-i</button>
+    <button class="chip" data-site="lp">лендинги</button>
+    <button class="chip" data-site="other">неизвестно</button>
     <span class="sep"></span>
     <label class="dim"><input type="checkbox" id="onlyPaid" checked> только каналы с расходом в строках итога</label>
+  </div>
+  <div class="bar">
+    <span class="dim">Способ связи:</span>
+    <button class="chip on" data-m="all">все</button>
+    <button class="chip" data-m="Форма">форма</button>
+    <button class="chip" data-m="Калькулятор">калькулятор</button>
+    <button class="chip" data-m="Квиз">квиз</button>
+    <button class="chip" data-m="Звонок">звонок</button>
+    <button class="chip" data-m="WhatsApp">WhatsApp</button>
+    <button class="chip" data-m="Email">email</button>
+    <button class="chip" data-m="Другое">другое</button>
+    <span class="dim" id="mnote"></span>
   </div>
 
   <div class="kpis" id="kpis"></div>
@@ -113,11 +126,13 @@ const div = (a, b) => b > 0 ? a / b : null;
 const MONTHS = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
 const monthLabel = (ym) => MONTHS[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4);
 
-let DATA = null, site = 'all', group = 'platform', range = {from: '', to: ''};
+let DATA = null, site = 'all', method = 'all', group = 'platform', range = {from: '', to: ''};
 const open = new Set();
 const qopen = new Set();
-const SITE_ORDER = ['invest', 'lp', 'site', ''];
-const SITE_LABEL = {invest: 'zenith-invest', lp: 'LP', site: 'zenith-i', '': 'Прочее'};
+const SITE_ORDER = ['invest', 'site', 'lp', ''];
+const SITE_LABEL = {invest: 'zenith-invest', lp: 'лендинги', site: 'zenith-i', '': 'сайт неизвестен'};
+const siteOk = (x) => site === 'all' || (site === 'other' ? !x.s : x.s === site);
+const methodOk = (x) => method === 'all' || x.m === method;
 
 const iso = (d) => d.toISOString().slice(0, 10);
 // сегодняшняя дата по Алматы (UTC+5), чтобы ночью «сегодня» и «вчера» не уезжали
@@ -187,8 +202,8 @@ const DM = (d) => d.slice(8) + '.' + d.slice(5, 7);
 function qlist(key, sk, topFn, subFn, src){
   const list = (src === 'pays' ? (DATA.pays || []) : (DATA.quals || [])).filter((q) => q.d >= range.from && q.d <= range.to &&
     (key === null || topFn(q) === key) && (sk === null || subFn(q) === sk) &&
-    (site === 'all' || (site === 'other' ? !q.s : q.s === site)));
-  const showP = key === null || (group === 'month' && sk === null);
+    siteOk(q) && methodOk(q));
+  const showP = key === null || (group !== 'platform' && sk === null);
   const body = list.length ? list.map((q) => {
     const extra = showP ? ' · ' + q.p : (sk === null && q.c && q.c !== '(всё вместе)' ? ' · ' + q.c : '');
     return '<a href="https://' + DATA.portal + '/crm/deal/details/' + q.id + '/" target="_blank" rel="noopener" title="' + q.p + ' · ' + q.c + '">№' + q.id + ' <span class="dd">' + DM(q.d) + extra + (q.a ? ' · ' + money(q.a) : '') + '</span></a>';
@@ -197,7 +212,8 @@ function qlist(key, sk, topFn, subFn, src){
 }
 
 function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.d <= range.to)
-    .filter((r) => site === 'all' || (site === 'other' ? !r.s : r.s === site));
+    .filter(siteOk).filter(methodOk);
+  document.getElementById('mnote').textContent = method === 'all' ? '' : 'расход по способу связи не делится — цены лида и квала скрыты';
   const total = rows.reduce((a, r) => add(a, r), ZERO());
   const paidTotal = rows.filter((r) => r.sp > 0 || true).reduce((a, r) => add(a, r), ZERO());
 
@@ -214,10 +230,11 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
   document.getElementById('kpis').innerHTML = k.map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
 
   // таблица
-  const top = group === 'platform' ? (r) => r.p : (r) => r.d.slice(0, 7);
+  const top = group === 'platform' ? (r) => r.p : group === 'dir' ? (r) => r.n || 'не определено' : (r) => r.d.slice(0, 7);
   const sub = group === 'platform' ? (r) => r.c : (r) => r.p;
   const topMap = aggregate(rows, top);
-  const PRI = {Google: 0, Meta: 1, SEO: 2, Satu: 3, 'Яндекс': 4, 'Повторные клиенты': 5, 'Не определено': 6};
+  const PRI = {'Google Ads': 0, 'Meta Ads': 1, 'ChatGPT Ads': 2, 'Яндекс Директ': 3, SEO: 4, 'ИИ-ассистенты': 5, Instagram: 6, Satu: 7, 'Сайт, источник неизвестен': 8, 'Повторный клиент': 9, 'Без источника': 10,
+    'Огнезащита': 0, 'Антикор': 1, 'Гидроизоляция': 2, 'Полы': 3, 'ЛКМ': 4, 'Растворители': 5, 'Все направления': 6, 'не определено': 7};
   const order = [...topMap.entries()].sort((a, b) => group === 'month' ? (a[0] < b[0] ? 1 : -1) : ((PRI[a[0]] ?? 9) - (PRI[b[0]] ?? 9)) || (b[1].sp - a[1].sp) || (b[1].cn - a[1].cn));
 
   let html = '<thead><tr>' + HEAD.map((h) => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
@@ -291,9 +308,11 @@ function render(){  const rows = DATA.rows.filter((r) => r.d >= range.from && r.
   });
 
   document.getElementById('notes').innerHTML =
-    'Лид — сделка в «Обработке заявок» без этапов СПАМ и ДУБЛЬ. Квал — этап «КВАЛИФИКАЦИЯ ПРОЙДЕНА». Лиды и квалы стоят на дате создания лида, оплаты и выручка — на дате оплаты. ' +
-    'Платформы: Google, Meta, SEO (350 000 ₸ в месяц, общим расходом), Satu, Яндекс. Если у заявки или оплаты нет метки, ищем историю клиента по контакту, телефону и компании. Нашли раннюю метку — относим туда. Клиент уже покупал — «Повторные клиенты». Иначе «Не определено». Расход на два последних не делится. Цена квала в итоге считается на ВСЕ квалы, поэтому по каналам она честнее.';
-  if (site !== 'all') document.getElementById('notes').innerHTML += '<br>Фильтр по сайту: в zenith-i попадают кампании со словом «сайт» и метки с «site», в LP — «лендинг», land, lp, в zenith-invest — «инвест» и invest. Всё, где в названии кампании или в UTM нет таких слов (Яндекс, Satu, звонки, WhatsApp, часть кампаний), лежит в «Прочее».';
+    '<b>Как читать.</b> Лид — сделка в «Обработке заявок» без этапов СПАМ и ДУБЛЬ. Квал — этап «КВАЛИФИКАЦИЯ ПРОЙДЕНА». Лиды и квалы стоят на дате создания, оплаты — на дате оплаты. Выводы делаем с 1 ноября 2026.<br>' +
+    '<b>Источник</b> (первое подходящее правило): 1) метки сделки — google/cpc → Google Ads, meta/fb/ig + cpc → Meta Ads, chatgpt_ads → ChatGPT Ads, yandex/cpc → Яндекс Директ, любой поиск organic → SEO, chatgpt.com и т.п. без рекламы → ИИ-ассистенты, ig/social (ссылка в профиле) → Instagram, satu → Satu; номера коллтрекинга landing_meta/landing_google → Meta/Google; переход с сайта без сессии → «Сайт, источник неизвестен»; ' +
+    '2) нет меток — ранняя заявка этого же клиента с метками (контакт, телефон, компания) или метки в карточке контакта; 3) источник, выбранный менеджером в Битриксе (Google SEO, Google PPC, Satu); 4) клиент уже покупал → «Повторный клиент»; 5) иначе «Без источника» с подписью канала (номер WhatsApp, линия звонка, почта).<br>' +
+    '<b>Сайт</b> — только по фактам: страница заявки (форма, квиз, коллтрекинг); WhatsApp 77009180900 — виджет YourGood на zenith-invest, 77717555440 — на zenith-i и лендингах; подменный номер коллтрекинга — zenith-invest; иначе «сайт неизвестен». Расход SEO (350 000 ₸/мес) отнесён к zenith-invest, Яндекс — к zenith-i.<br>' +
+    '<b>Направление</b> — по кампании, иначе по метке, странице или названию сделки. <b>Способ связи</b> — форма, калькулятор, квиз, звонок, WhatsApp, email; при фильтре по способу связи расход не показывается. Цена квала в итоге считается на все квалы, по источникам она честнее.';
   renderDiag();
 }
 
@@ -312,9 +331,10 @@ function renderDiag(){
       <tr><td>Не определены (нет метки)</td><td>${p.unknown ?? 0}</td></tr></table></div>
     <div><b>Метки utm_campaign, которых нет в кабинете</b>${li(d.unmatchedUtm || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}
       <div class="dim" style="margin-top:6px">Если здесь много строк — добавь правило в config/campaign-map.json или поставь в рекламе id кампании в UTM.</div></div>
-    <div><b>Лиды без UTM: как найден источник (${(d.noUtm || {}).total ?? 0})</b>${li((d.noUtm || {}).by || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
-    <div><b>Лиды без UTM по источнику Битрикса</b>${li((d.noUtm || {}).sources || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
-    <div><b>Лиды без UTM по странице заявки</b>${li((d.noUtm || {}).pages || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
+    <div><b>По какому правилу определён источник (чистые лиды с ${DATA.statsFrom || '2026-11-01'})</b>${li(d.rules || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
+    <div><b>Как определён сайт (чистые лиды с ${DATA.statsFrom || '2026-11-01'})</b>${li(d.siteRules || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td></tr>`)}</div>
+    <div><b>Метки utm_source, не подошедшие ни под одно правило</b>${li(d.unknownSources || [], (x) => `<tr><td>${x.k}</td><td>${x.n}</td><td>${(x.ids || []).filter((v, i, a) => a.indexOf(v) === i).slice(0, 5).map((id) => '<a href="https://' + DATA.portal + '/crm/deal/details/' + id + '/" target="_blank" rel="noopener">№' + id + '</a>').join(' ')}</td></tr>`)}</div>
+    <div><b>Лиды без направления (с ${DATA.statsFrom || '2026-11-01'}, до 40)</b><div>${(d.noDirIds || []).map((id) => '<a href="https://' + DATA.portal + '/crm/deal/details/' + id + '/" target="_blank" rel="noopener">№' + id + '</a>').join(' ') || '<span class="dim">нет</span>'}</div></div>
     <div><b>Кампании кабинета без своего «семейства»</b>${li(d.unmatchedCabinet || [], (x) => `<tr><td>${x.k}</td></tr>`)}</div>
     <div><b>Этапы воронки «Обработка заявок»</b><table>${stages(d.stagesLeads)}</table></div>
     <div><b>Этапы воронки «Первичные продажи»</b><table>${stages(d.stagesSales)}</table></div>
@@ -368,6 +388,11 @@ async function init(){
   document.querySelectorAll('[data-site]').forEach((b) => b.onclick = () => {
     site = b.dataset.site;
     document.querySelectorAll('[data-site]').forEach((x) => x.classList.toggle('on', x === b));
+    render();
+  });
+  document.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => {
+    method = b.dataset.m;
+    document.querySelectorAll('[data-m]').forEach((x) => x.classList.toggle('on', x === b));
     render();
   });
   document.getElementById('onlyPaid').closest('label').remove();
