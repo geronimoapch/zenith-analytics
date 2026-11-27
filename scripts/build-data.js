@@ -270,11 +270,22 @@ const isRepeat = (e) => {
   const eDay = day(e.created);
   return itemsOf(e).some((it) => it.paid && day(it.ref.closed || it.ref.modified) < eDay);
 };
-const channelOf = (name) => {
+// линии телефонии Битрикса (voximplant.line.get) -> понятная подпись
+const PHONE_LINES = { 'ТОО Zenith invest': '+7 708 540-41-40', '7018004626': '+7 701 800-46-26', 'Входящий звонок 2': 'линия 2' };
+// канал без метки: для WhatsApp — номер, для звонка — линия, на которую позвонили (из описания источника)
+const channelOf = (name, desc) => {
   const n = String(name || '').toLowerCase();
   if (!n) return 'Источник не указан';
-  if (/wapi|whatsapp|wazzup|ватсап|вацап/.test(n)) return 'WhatsApp';
-  if (/звонок|call|телефон/.test(n)) return 'Звонок';
+  if (/wapi|whatsapp|wazzup|ватсап|вацап/.test(n)) {
+    const num = (String(name).match(/7\d{10}/) || [])[0];
+    return num ? 'WhatsApp ' + num : 'WhatsApp';
+  }
+  if (/звонок|call|телефон/.test(n)) {
+    const m = /номер: (.+?)\.?$/m.exec(String(desc || '').trim());
+    if (!m) return 'Звонок';
+    const line = m[1].trim();
+    return 'Звонок · ' + (PHONE_LINES[line] || line);
+  }
   if (/почт|mail/.test(n)) return 'Email';
   return name;
 };
@@ -322,10 +333,10 @@ leads.forEach((x) => {
   try { path = page ? new URL(page).pathname : ''; } catch (e) { path = ''; }
   const dir = dirOf(path) || dirOf(x.title);
   if (!a && /satu/i.test(String(x.sourceName || ''))) a = { platform: 'Satu', how: 'источник Битрикса: Satu' };
-  if (!a && isRepeat(x)) a = { platform: REPEAT, family: channelOf(x.sourceName || x.source), how: 'повторный клиент' };
+  if (!a && isRepeat(x)) a = { platform: REPEAT, family: channelOf(x.sourceName || x.source, x.sdesc), how: 'повторный клиент' };
   if (!a && /^\/lp\//.test(path)) a = { platform: UNDEF, family: 'Лендинг · ' + (dir || 'без направления'), how: 'лендинг без метки' };
   if (!a && page) a = { platform: UNDEF, family: 'Сайт · ' + (dir || 'прочие страницы'), how: 'страница сайта без метки' };
-  if (!a) a = { platform: UNDEF, family: channelOf(x.sourceName || x.source), how: 'только источник Битрикса' };
+  if (!a) a = { platform: UNDEF, family: channelOf(x.sourceName || x.source, x.sdesc), how: 'только источник Битрикса' };
   x.attr = a;
   if (x.day < FIRST) return;
   noUtm.total++;
