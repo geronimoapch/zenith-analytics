@@ -133,6 +133,7 @@ const rows = new Map();
 function bucket(d, p, c, s = '') {
   if (!s && p === 'Яндекс') s = 'site'; // вся реклама Яндекса идёт на zenith-i
   if (!s && p === 'Meta') s = 'lp'; // Мета без явного признака сайта — это LP
+  if (!s && p === 'SEO') s = 'invest'; // SEO продвигаем только zenith-invest.kz, расход SEO относится к нему
   const k = d + '|' + p + '|' + c + '|' + s;
   let r = rows.get(k);
   if (!r) {
@@ -384,6 +385,8 @@ leads.forEach((x) => {
       if (was[0] !== campOut || was[1] !== x.site) pageFixes.push({ id: x.id, p: platform, from: was.join(' | '), to: campOut + ' | ' + x.site, page: pageOf(x) });
     }
   }
+  // площадка не определилась по меткам — берём по странице заявки (органика, лиды без метки)
+  if (!x.site) { const ps = pageSiteOf(x); if (ps) x.site = ps; }
   x.family = campOut;
   const b = bucket(x.day, platform, campOut, x.site);
   b.l += 1;
